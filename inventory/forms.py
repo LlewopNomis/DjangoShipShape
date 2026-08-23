@@ -90,16 +90,21 @@ class InventoryItemForm(BootstrapFormMixin, forms.ModelForm):
         fields = ['name', 'category', 'location', 'quantity', 'value', 'condition', 'notes']
 
 
+ATTACHMENT_FILE_INPUT = forms.ClearableFileInput(attrs={'accept': 'image/*,.pdf'})
+
+
 class ItemPhotoForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = ItemPhoto
         fields = ['image', 'caption', 'is_primary', 'is_receipt']
+        widgets = {'image': ATTACHMENT_FILE_INPUT}
 
 
 class LocationPhotoForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = LocationPhoto
         fields = ['image', 'caption', 'is_primary']
+        widgets = {'image': ATTACHMENT_FILE_INPUT}
 
 
 class ItemStockChoiceField(forms.ModelChoiceField):
@@ -129,6 +134,7 @@ class RepairPhotoForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = RepairPhoto
         fields = ['image', 'caption']
+        widgets = {'image': ATTACHMENT_FILE_INPUT}
 
 
 class RepairConsumedItemForm(BootstrapFormMixin, forms.ModelForm):

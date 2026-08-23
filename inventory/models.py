@@ -1,5 +1,13 @@
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from treebeard.mp_tree import MP_Node
+
+# Shared by ItemPhoto/LocationPhoto/RepairPhoto: photos plus PDFs (manuals,
+# receipts, warranty docs) — PDFs are stored as-is rather than converted to
+# an image, since that preserves multi-page/searchable/full-quality
+# documents and browsers already render PDFs natively when opened.
+ATTACHMENT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf']
+validate_attachment_extension = FileExtensionValidator(allowed_extensions=ATTACHMENT_EXTENSIONS)
 
 
 class Location(MP_Node):
@@ -83,7 +91,7 @@ def location_photo_path(instance, filename):
 
 class ItemPhoto(models.Model):
     item = models.ForeignKey(InventoryItem, on_delete=models.CASCADE, related_name='photos')
-    image = models.ImageField(upload_to=item_photo_path)
+    image = models.FileField(upload_to=item_photo_path, validators=[validate_attachment_extension])
     caption = models.CharField(max_length=200, blank=True)
     is_primary = models.BooleanField(default=False)
     is_receipt = models.BooleanField(default=False, help_text='This is a purchase receipt, not a photo of the item.')
@@ -95,10 +103,14 @@ class ItemPhoto(models.Model):
     def __str__(self):
         return f'Photo of {self.item.name}'
 
+    @property
+    def is_pdf(self):
+        return self.image.name.lower().endswith('.pdf')
+
 
 class LocationPhoto(models.Model):
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name='photos')
-    image = models.ImageField(upload_to=location_photo_path)
+    image = models.FileField(upload_to=location_photo_path, validators=[validate_attachment_extension])
     caption = models.CharField(max_length=200, blank=True)
     is_primary = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -108,6 +120,10 @@ class LocationPhoto(models.Model):
 
     def __str__(self):
         return f'Photo of {self.location.name}'
+
+    @property
+    def is_pdf(self):
+        return self.image.name.lower().endswith('.pdf')
 
 
 class LocationHotspot(models.Model):
@@ -186,7 +202,7 @@ def repair_photo_path(instance, filename):
 
 class RepairPhoto(models.Model):
     repair = models.ForeignKey(Repair, on_delete=models.CASCADE, related_name='photos')
-    image = models.ImageField(upload_to=repair_photo_path)
+    image = models.FileField(upload_to=repair_photo_path, validators=[validate_attachment_extension])
     caption = models.CharField(max_length=200, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -195,6 +211,10 @@ class RepairPhoto(models.Model):
 
     def __str__(self):
         return f'Photo of {self.repair}'
+
+    @property
+    def is_pdf(self):
+        return self.image.name.lower().endswith('.pdf')
 
 
 class RepairConsumedItem(models.Model):

@@ -35,19 +35,23 @@
         </div>
     {% endif %}
 
-    <h6>Photos</h6>
+    <h6>Photos &amp; documents</h6>
     <div class="d-flex flex-wrap gap-3 mb-2">
         {% for photo in photos %}
             <div class="text-center">
-                <a href="{{ photo.image.url }}" target="_blank"><img src="{{ photo.image.url }}" class="photo-thumb" alt="{{ photo.caption }}"></a>
+                {% if photo.is_pdf %}
+                    <a href="{{ photo.image.url }}" target="_blank" class="photo-thumb photo-thumb-pdf">📄</a>
+                {% else %}
+                    <a href="{{ photo.image.url }}" target="_blank"><img src="{{ photo.image.url }}" class="photo-thumb" alt="{{ photo.caption }}"></a>
+                {% endif %}
                 <div class="small text-muted">{{ photo.caption }}</div>
-                <form method="post" action="{% url 'inventory:location_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this photo?');">
+                <form method="post" action="{% url 'inventory:location_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this?');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-link text-danger p-0">remove</button>
                 </form>
             </div>
         {% empty %}
-            <p class="text-muted">No photos yet.</p>
+            <p class="text-muted">No photos or documents yet.</p>
         {% endfor %}
     </div>
     <form method="post" action="{% url 'inventory:location_photo_add' location.pk %}" enctype="multipart/form-data" class="row g-2 align-items-end mb-4">
@@ -58,7 +62,7 @@
             {{ photo_form.is_primary }}
             <label class="form-check-label" for="{{ photo_form.is_primary.id_for_label }}">Primary</label>
         </div>
-        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add photo</button></div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add</button></div>
     </form>
 
     <h6>Items stored here</h6>
@@ -70,7 +74,9 @@
                 {% with photo=item.photos.all|first %}
                 <tr class="cursor-pointer" onclick="window.location='{% url 'inventory:item_detail' item.pk %}'">
                     <td>
-                        {% if photo %}
+                        {% if photo.is_pdf %}
+                            <div class="photo-thumb-sm photo-thumb-sm-pdf">📄</div>
+                        {% elif photo %}
                             <img src="{{ photo.image.url }}" class="photo-thumb-sm" alt="">
                         {% else %}
                             <div class="photo-thumb-sm photo-thumb-placeholder"></div>

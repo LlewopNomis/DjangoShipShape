@@ -19,6 +19,10 @@ nobody can ever say what's actually aboard, or what it would cost to replace.
 - **Inventory items** — quantity, condition, an optional `$` value (for
   insurance/valuation purposes), free-text notes, and photos — including a
   "this is a receipt" flag so purchase proof stays attached to the item.
+- **PDF attachments** — the same upload spot on items, locations, and
+  repairs also takes PDFs (manuals, receipts, warranty docs), stored as-is
+  rather than converted to an image, so they stay full quality and
+  multi-page. Shown as a document icon instead of a thumbnail.
 - **Search across all three dimensions** — filter the inventory list by
   free-text search, category (including everything nested under it), or
   location (ditto).

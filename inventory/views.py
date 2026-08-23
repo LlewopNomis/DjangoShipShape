@@ -130,6 +130,9 @@ def location_photo_add(request, pk):
             photo.location = location
             photo.save()
             messages.success(request, 'Photo added.')
+        else:
+            for error in form.errors.get('image', []):
+                messages.error(request, error)
     return redirect('inventory:location_detail', pk=location.pk)
 
 
@@ -303,6 +306,9 @@ def item_photo_add(request, pk):
             photo.item = item
             photo.save()
             messages.success(request, 'Photo added.')
+        else:
+            for error in form.errors.get('image', []):
+                messages.error(request, error)
     return redirect('inventory:item_detail', pk=item.pk)
 
 
@@ -420,6 +426,9 @@ def repair_photo_add(request, pk):
             photo.repair = repair
             photo.save()
             messages.success(request, 'Photo added.')
+        else:
+            for error in form.errors.get('image', []):
+                messages.error(request, error)
     return redirect('inventory:repair_detail', pk=repair.pk)
 
 

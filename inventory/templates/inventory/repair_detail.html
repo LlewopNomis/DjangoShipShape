@@ -56,25 +56,29 @@
         <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Record use</button></div>
     </form>
 
-    <h6>Photos</h6>
+    <h6>Photos &amp; documents</h6>
     <div class="d-flex flex-wrap gap-3 mb-2">
         {% for photo in photos %}
             <div class="text-center">
-                <a href="{{ photo.image.url }}" target="_blank"><img src="{{ photo.image.url }}" class="photo-thumb" alt="{{ photo.caption }}"></a>
+                {% if photo.is_pdf %}
+                    <a href="{{ photo.image.url }}" target="_blank" class="photo-thumb photo-thumb-pdf">📄</a>
+                {% else %}
+                    <a href="{{ photo.image.url }}" target="_blank"><img src="{{ photo.image.url }}" class="photo-thumb" alt="{{ photo.caption }}"></a>
+                {% endif %}
                 <div class="small text-muted">{{ photo.caption }}</div>
-                <form method="post" action="{% url 'inventory:repair_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this photo?');">
+                <form method="post" action="{% url 'inventory:repair_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this?');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-link text-danger p-0">remove</button>
                 </form>
             </div>
         {% empty %}
-            <p class="text-muted">No photos yet.</p>
+            <p class="text-muted">No photos or documents yet.</p>
         {% endfor %}
     </div>
     <form method="post" action="{% url 'inventory:repair_photo_add' repair.pk %}" enctype="multipart/form-data" class="row g-2 align-items-end mb-4">
         {% csrf_token %}
         <div class="col-auto">{{ photo_form.image }}</div>
         <div class="col-auto">{{ photo_form.caption }}</div>
-        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add photo</button></div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add</button></div>
     </form>
 {% endblock %}
