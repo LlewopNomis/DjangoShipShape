@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Delete repair — ShipShape{% endblock %}
+{% block content %}
+    <h3>Delete "{{ object.title }}"?</h3>
+    <p class="text-muted">This removes the log entry and its photos. Any stock recorded as consumed on this repair will be restored to inventory.</p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Yes, delete</button>
+        <a href="{% url 'inventory:repair_detail' object.pk %}" class="btn btn-link">Cancel</a>
+    </form>
+{% endblock %}

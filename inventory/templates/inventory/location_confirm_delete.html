@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Delete location — ShipShape{% endblock %}
+{% block content %}
+    <h3>Delete "{{ object.name }}"?</h3>
+    <p class="text-muted">This will also delete any sub-locations beneath it. Items stored here must be moved or removed first.</p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Yes, delete</button>
+        <a href="{% url 'inventory:location_detail' object.pk %}" class="btn btn-link">Cancel</a>
+    </form>
+{% endblock %}

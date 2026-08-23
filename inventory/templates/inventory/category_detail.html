@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ category.name }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:category_list' %}">Categories</a></li>
+            {% for a in ancestors %}
+                <li class="breadcrumb-item"><a href="{% url 'inventory:category_detail' a.pk %}">{{ a.name }}</a></li>
+            {% endfor %}
+            <li class="breadcrumb-item active">{{ category.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ category.name }}</h3>
+            {% if category.description %}<p class="text-muted mb-0">{{ category.description }}</p>{% endif %}
+        </div>
+        <div class="btn-group">
+            <a href="{% url 'inventory:category_add' %}?parent={{ category.pk }}" class="btn btn-sm btn-outline-secondary">+ Sub-category</a>
+            <a href="{% url 'inventory:category_edit' category.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            <a href="{% url 'inventory:category_delete' category.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+        </div>
+    </div>
+
+    {% if children %}
+        <h6>Sub-categories</h6>
+        <div class="list-group mb-4">
+            {% for child in children %}
+                <a href="{% url 'inventory:category_detail' child.pk %}" class="list-group-item list-group-item-action">
+                    🏷️ {{ child.name }}
+                </a>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <h6>Items in this category</h6>
+    {% if items %}
+        <table class="table table-sm table-hover">
+            <thead><tr><th>Name</th><th>Location</th><th>Qty</th><th>Condition</th></tr></thead>
+            <tbody>
+            {% for item in items %}
+                <tr>
+                    <td><a href="{% url 'inventory:item_detail' item.pk %}">{{ item.name }}</a></td>
+                    <td>{{ item.location }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>{{ item.get_condition_display }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted">Nothing in this category yet.</p>
+    {% endif %}
+{% endblock %}

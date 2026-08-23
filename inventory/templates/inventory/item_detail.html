@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ item.name }} — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ item.name }}</h3>
+            <p class="text-muted mb-0">
+                {{ item.get_condition_display }} · Qty {{ item.quantity }}
+                {% if item.value %} · ${{ item.value }}{% endif %}
+                {% if item.category %} · <a href="{% url 'inventory:category_detail' item.category.pk %}">{{ item.category }}</a>{% endif %}
+                · <a href="{% url 'inventory:location_detail' item.location.pk %}">{{ item.location }}</a>
+            </p>
+        </div>
+        <div class="btn-group">
+            <a href="{% url 'inventory:item_edit' item.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            <a href="{% url 'inventory:item_delete' item.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+        </div>
+    </div>
+
+    {% if item.notes %}
+        <p>{{ item.notes|linebreaks }}</p>
+    {% endif %}
+
+    <h6>Photos</h6>
+    <div class="d-flex flex-wrap gap-3 mb-2">
+        {% for photo in photos %}
+            <div class="text-center">
+                <a href="{{ photo.image.url }}" target="_blank"><img src="{{ photo.image.url }}" class="photo-thumb" alt="{{ photo.caption }}"></a>
+                <div class="small text-muted">{% if photo.is_receipt %}🧾 {% endif %}{{ photo.caption }}</div>
+                <form method="post" action="{% url 'inventory:item_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this photo?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-link text-danger p-0">remove</button>
+                </form>
+            </div>
+        {% empty %}
+            <p class="text-muted">No photos yet.</p>
+        {% endfor %}
+    </div>
+    <form method="post" action="{% url 'inventory:item_photo_add' item.pk %}" enctype="multipart/form-data" class="row g-2 align-items-end mb-4">
+        {% csrf_token %}
+        <div class="col-auto">{{ photo_form.image }}</div>
+        <div class="col-auto">{{ photo_form.caption }}</div>
+        <div class="col-auto form-check">
+            {{ photo_form.is_primary }}
+            <label class="form-check-label" for="{{ photo_form.is_primary.id_for_label }}">Primary</label>
+        </div>
+        <div class="col-auto form-check">
+            {{ photo_form.is_receipt }}
+            <label class="form-check-label" for="{{ photo_form.is_receipt.id_for_label }}">Receipt</label>
+        </div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add photo</button></div>
+    </form>
+{% endblock %}

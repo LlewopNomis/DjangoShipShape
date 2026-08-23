@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Inventory — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Inventory</h3>
+        <a href="{% url 'inventory:item_add' %}" class="btn btn-primary btn-sm">+ Add item</a>
+    </div>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search name or notes...">
+        </div>
+        <div class="col-md-3">
+            <select name="category" class="form-select">
+                <option value="">All categories</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.pk }}" {% if selected_category == cat.pk|stringformat:"s" %}selected{% endif %}>
+                        {% for n in cat.get_ancestors %}—{% endfor %} {{ cat.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select name="location" class="form-select">
+                <option value="">All locations</option>
+                {% for loc in locations %}
+                    <option value="{{ loc.pk }}" {% if selected_location == loc.pk|stringformat:"s" %}selected{% endif %}>
+                        {% for n in loc.get_ancestors %}—{% endfor %} {{ loc.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-outline-secondary w-100">Filter</button>
+        </div>
+    </form>
+
+    {% if items %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr><th>Name</th><th>Category</th><th>Location</th><th>Qty</th><th>Value</th><th>Condition</th></tr>
+                </thead>
+                <tbody>
+                {% for item in items %}
+                    <tr>
+                        <td><a href="{% url 'inventory:item_detail' item.pk %}">{{ item.name }}</a></td>
+                        <td>{{ item.category|default:"—" }}</td>
+                        <td><a href="{% url 'inventory:location_detail' item.location.pk %}">{{ item.location }}</a></td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{% if item.value %}${{ item.value }}{% else %}—{% endif %}</td>
+                        <td>{{ item.get_condition_display }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+                {% if filtered_total_value %}
+                    <tfoot>
+                        <tr class="table-light">
+                            <td colspan="4" class="text-end fw-semibold">Total known value:</td>
+                            <td class="fw-semibold">${{ filtered_total_value }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                {% endif %}
+            </table>
+        </div>
+        {% if is_paginated %}
+            <nav>
+                <ul class="pagination">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a></li>
+                    {% endif %}
+                    <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+                    {% if page_obj.has_next %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+    {% else %}
+        <p class="text-muted">No items found. <a href="{% url 'inventory:item_add' %}">Add one</a>.</p>
+    {% endif %}
+{% endblock %}

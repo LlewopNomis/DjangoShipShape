@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ repair.title }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:repair_list' %}">Repair log</a></li>
+            <li class="breadcrumb-item active">{{ repair.title }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ repair.title }}</h3>
+            <p class="text-muted mb-0">
+                {{ repair.date }}
+                {% if repair.category %} · {{ repair.category }}{% endif %}
+                {% if repair.location %} · <a href="{% url 'inventory:location_detail' repair.location.pk %}">{{ repair.location }}</a>{% endif %}
+                {% if repair.hours_spent %} · {{ repair.hours_spent }} hrs{% endif %}
+            </p>
+        </div>
+        <div class="btn-group">
+            <a href="{% url 'inventory:repair_edit' repair.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            <a href="{% url 'inventory:repair_delete' repair.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+        </div>
+    </div>
+
+    {% if repair.notes %}
+        <p>{{ repair.notes|linebreaks }}</p>
+    {% endif %}
+
+    <h6>Items consumed</h6>
+    {% if consumed_items %}
+        <table class="table table-sm mb-2">
+            <tbody>
+            {% for c in consumed_items %}
+                <tr>
+                    <td><a href="{% url 'inventory:item_detail' c.item.pk %}">{{ c.item.name }}</a></td>
+                    <td>{{ c.quantity }}</td>
+                    <td class="text-end">
+                        <form method="post" action="{% url 'inventory:repair_consumed_item_delete' c.pk %}" onsubmit="return confirm('Remove this and restore stock?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-link text-danger p-0">remove</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted">No parts recorded as used yet.</p>
+    {% endif %}
+    <form method="post" action="{% url 'inventory:repair_consume_item' repair.pk %}" class="row g-2 align-items-end mb-4">
+        {% csrf_token %}
+        <div class="col-auto">{{ consume_form.item }}</div>
+        <div class="col-auto" style="max-width: 100px;">{{ consume_form.quantity }}</div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Record use</button></div>
+    </form>
+
+    <h6>Photos</h6>
+    <div class="d-flex flex-wrap gap-3 mb-2">
+        {% for photo in photos %}
+            <div class="text-center">
+                <a href="{{ photo.image.url }}" target="_blank"><img src="{{ photo.image.url }}" class="photo-thumb" alt="{{ photo.caption }}"></a>
+                <div class="small text-muted">{{ photo.caption }}</div>
+                <form method="post" action="{% url 'inventory:repair_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this photo?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-link text-danger p-0">remove</button>
+                </form>
+            </div>
+        {% empty %}
+            <p class="text-muted">No photos yet.</p>
+        {% endfor %}
+    </div>
+    <form method="post" action="{% url 'inventory:repair_photo_add' repair.pk %}" enctype="multipart/form-data" class="row g-2 align-items-end mb-4">
+        {% csrf_token %}
+        <div class="col-auto">{{ photo_form.image }}</div>
+        <div class="col-auto">{{ photo_form.caption }}</div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add photo</button></div>
+    </form>
+{% endblock %}

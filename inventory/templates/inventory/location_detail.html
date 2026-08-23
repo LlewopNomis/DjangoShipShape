@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ location.name }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:location_list' %}">Locations</a></li>
+            {% for a in ancestors %}
+                <li class="breadcrumb-item"><a href="{% url 'inventory:location_detail' a.pk %}">{{ a.name }}</a></li>
+            {% endfor %}
+            <li class="breadcrumb-item active">{{ location.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ location.name }}</h3>
+            {% if location.description %}<p class="text-muted mb-0">{{ location.description }}</p>{% endif %}
+        </div>
+        <div class="btn-group">
+            <a href="{% url 'inventory:location_add' %}?parent={{ location.pk }}" class="btn btn-sm btn-outline-secondary">+ Sub-location</a>
+            <a href="{% url 'inventory:item_add' %}?location={{ location.pk }}" class="btn btn-sm btn-outline-secondary">+ Item here</a>
+            <a href="{% url 'inventory:location_edit' location.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            <a href="{% url 'inventory:location_delete' location.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+        </div>
+    </div>
+
+    {% if children %}
+        <h6>Sub-locations</h6>
+        <div class="list-group mb-4">
+            {% for child in children %}
+                <a href="{% url 'inventory:location_detail' child.pk %}" class="list-group-item list-group-item-action">
+                    📁 {{ child.name }}
+                </a>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <h6>Photos</h6>
+    <div class="d-flex flex-wrap gap-3 mb-2">
+        {% for photo in photos %}
+            <div class="text-center">
+                <a href="{{ photo.image.url }}" target="_blank"><img src="{{ photo.image.url }}" class="photo-thumb" alt="{{ photo.caption }}"></a>
+                <div class="small text-muted">{{ photo.caption }}</div>
+                <form method="post" action="{% url 'inventory:location_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this photo?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-link text-danger p-0">remove</button>
+                </form>
+            </div>
+        {% empty %}
+            <p class="text-muted">No photos yet.</p>
+        {% endfor %}
+    </div>
+    <form method="post" action="{% url 'inventory:location_photo_add' location.pk %}" enctype="multipart/form-data" class="row g-2 align-items-end mb-4">
+        {% csrf_token %}
+        <div class="col-auto">{{ photo_form.image }}</div>
+        <div class="col-auto">{{ photo_form.caption }}</div>
+        <div class="col-auto form-check">
+            {{ photo_form.is_primary }}
+            <label class="form-check-label" for="{{ photo_form.is_primary.id_for_label }}">Primary</label>
+        </div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add photo</button></div>
+    </form>
+
+    <h6>Items stored here</h6>
+    {% if items %}
+        <table class="table table-sm table-hover align-middle">
+            <thead><tr><th></th><th>Name</th><th>Category</th><th>Qty</th><th>Condition</th></tr></thead>
+            <tbody>
+            {% for item in items %}
+                {% with photo=item.photos.all|first %}
+                <tr class="cursor-pointer" onclick="window.location='{% url 'inventory:item_detail' item.pk %}'">
+                    <td>
+                        {% if photo %}
+                            <img src="{{ photo.image.url }}" class="photo-thumb-sm" alt="">
+                        {% else %}
+                            <div class="photo-thumb-sm photo-thumb-placeholder"></div>
+                        {% endif %}
+                    </td>
+                    <td><a href="{% url 'inventory:item_detail' item.pk %}">{{ item.name }}</a></td>
+                    <td>{{ item.category|default:"—" }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>{{ item.get_condition_display }}</td>
+                </tr>
+                {% endwith %}
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted">Nothing recorded here yet.</p>
+    {% endif %}
+{% endblock %}

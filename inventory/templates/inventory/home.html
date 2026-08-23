@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}ShipShape — Home{% endblock %}
+{% block content %}
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6">{{ item_count }}</div>
+                    <div class="text-muted">Items tracked</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6">{{ location_count }}</div>
+                    <div class="text-muted">Locations</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6">{{ category_count }}</div>
+                    <div class="text-muted">Categories</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6">{% if total_value %}${{ total_value }}{% else %}—{% endif %}</div>
+                    <div class="text-muted">Known value</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 mb-4 flex-wrap">
+        <a href="{% url 'inventory:item_add' %}" class="btn btn-primary">+ Add item</a>
+        <a href="{% url 'inventory:location_add' %}" class="btn btn-outline-secondary">+ Add location</a>
+        <a href="{% url 'inventory:category_add' %}" class="btn btn-outline-secondary">+ Add category</a>
+        <a href="{% url 'inventory:repair_add' %}" class="btn btn-outline-secondary">+ Log a repair</a>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h5>Recently added</h5>
+            {% if recent_items %}
+                <div class="list-group mb-4">
+                    {% for item in recent_items %}
+                        <a href="{% url 'inventory:item_detail' item.pk %}" class="list-group-item list-group-item-action d-flex justify-content-between">
+                            <span>{{ item.name }}</span>
+                            <span class="text-muted small">{{ item.location.name }}</span>
+                        </a>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-muted">No items yet — start by adding a location, then add items to it.</p>
+            {% endif %}
+        </div>
+        <div class="col-md-6">
+            <h5>Recent repair log entries</h5>
+            {% if recent_repairs %}
+                <div class="list-group mb-4">
+                    {% for repair in recent_repairs %}
+                        <a href="{% url 'inventory:repair_detail' repair.pk %}" class="list-group-item list-group-item-action d-flex justify-content-between">
+                            <span>{{ repair.title }}</span>
+                            <span class="text-muted small">{{ repair.date }}</span>
+                        </a>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-muted">No repairs logged yet.</p>
+            {% endif %}
+        </div>
+    </div>
+{% endblock %}

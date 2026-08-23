@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Delete repair category — ShipShape{% endblock %}
+{% block content %}
+    <h3>Delete "{{ object.name }}"?</h3>
+    <p class="text-muted">Repairs already logged under this category will keep their record but show no category.</p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Yes, delete</button>
+        <a href="{% url 'inventory:repair_category_list' %}" class="btn btn-link">Cancel</a>
+    </form>
+{% endblock %}

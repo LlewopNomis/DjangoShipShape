@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Repair categories — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Repair categories</h3>
+        <a href="{% url 'inventory:repair_category_add' %}" class="btn btn-primary btn-sm">+ Add category</a>
+    </div>
+
+    {% if categories %}
+        <div class="list-group">
+            {% for cat in categories %}
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ cat.name }}</strong>
+                        {% if cat.description %}<div class="text-muted small">{{ cat.description }}</div>{% endif %}
+                    </div>
+                    <form method="post" action="{% url 'inventory:repair_category_delete' cat.pk %}" onsubmit="return confirm('Delete this category?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">No categories yet.</p>
+    {% endif %}
+{% endblock %}
