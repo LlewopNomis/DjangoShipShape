@@ -1,5 +1,8 @@
 # ShipShape ⚓
 
+[![CI](https://github.com/LlewopNomis/DjangoShipShape/actions/workflows/ci.yml/badge.svg)](https://github.com/LlewopNomis/DjangoShipShape/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A self-hosted Django app for keeping track of everything on a boat — what you
 have, where it lives, what it's worth, and what you've done to keep it
 running. Built because boat gear ends up stashed in a dozen lockers and
