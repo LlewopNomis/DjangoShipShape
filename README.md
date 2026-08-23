@@ -76,8 +76,19 @@ export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsa
 
 ## Using it
 
-1. Add a top-level **Location** (e.g. "Galley"), then keep adding
-   sub-locations to drill down as far as makes sense.
+1. Add a top-level **Location** to start the tree, then keep adding
+   sub-locations to drill down as far as makes sense. There's no wrong way to
+   root it — two approaches both work well:
+   - **The boat's name as the single root** (e.g. "Serendipity" → Galley →
+     Sole → Under panel 3), if you want one tree that mirrors the whole
+     vessel.
+   - **Key areas as separate root nodes** (e.g. "Galley", "Engine room",
+     "Cockpit locker" each as their own top-level location), if you'd rather
+     jump straight to an area without an extra click through the boat name
+     first.
+
+   Either is fine — sub-locations, items, and search all work the same way
+   regardless of which you pick.
 2. Add **Item categories** the same way (they nest too, independently of
    locations).
 3. Add **items**, tagging each to a location and category, with quantity,
