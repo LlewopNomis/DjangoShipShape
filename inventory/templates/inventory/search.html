@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Search — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Search</h3>
+        <a href="{% url 'inventory:item_add' %}" class="btn btn-primary btn-sm">+ Add item</a>
+    </div>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <label class="form-label small text-muted mb-1">Inventory</label>
+            <input type="text" name="item_q" value="{{ item_q }}" class="form-control" placeholder="e.g. &quot;thread insert&quot;..." list="item-name-options" autocomplete="off">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small text-muted mb-1">Location</label>
+            <input type="text" name="location_q" value="{{ location_q }}" class="form-control" placeholder="e.g. &quot;galley&quot;..." list="location-name-options" autocomplete="off">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small text-muted mb-1">Category</label>
+            <input type="text" name="category_q" value="{{ category_q }}" class="form-control" placeholder="e.g. &quot;fastener&quot;..." list="category-name-options" autocomplete="off">
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <button type="submit" class="btn btn-outline-secondary w-100">Filter</button>
+        </div>
+    </form>
+
+    <datalist id="item-name-options">
+        {% for name in item_name_options %}<option value="{{ name }}">{% endfor %}
+    </datalist>
+    <datalist id="location-name-options">
+        {% for loc in location_options %}<option value="{{ loc.name }}">{% endfor %}
+    </datalist>
+    <datalist id="category-name-options">
+        {% for cat in category_options %}<option value="{{ cat.name }}">{% endfor %}
+    </datalist>
+    {% if item_q or location_q or category_q %}
+        <p class="text-muted small">
+            Matching any word, in any field, at any level of the location/category tree.
+            <a href="{% url 'inventory:search' %}">Clear all</a>
+        </p>
+    {% else %}
+        <p class="text-muted small">No filters set — showing everything. Fill in any combination of the boxes above to narrow it down.</p>
+    {% endif %}
+
+    {% if items %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr><th>Name</th><th>Category</th><th>Location</th><th>Qty</th><th>Value</th><th>Condition</th></tr>
+                </thead>
+                <tbody>
+                {% for item in items %}
+                    <tr>
+                        <td><a href="{% url 'inventory:item_detail' item.pk %}">{{ item.name }}</a></td>
+                        <td>{% if item.category %}<a href="{% url 'inventory:category_detail' item.category.pk %}">{{ item.category }}</a>{% else %}—{% endif %}</td>
+                        <td><a href="{% url 'inventory:location_detail' item.location.pk %}">{{ item.location }}</a></td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{% if item.value %}${{ item.value }}{% else %}—{% endif %}</td>
+                        <td>{{ item.get_condition_display }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+                {% if filtered_total_value %}
+                    <tfoot>
+                        <tr class="table-light">
+                            <td colspan="4" class="text-end fw-semibold">Total known value:</td>
+                            <td class="fw-semibold">${{ filtered_total_value }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                {% endif %}
+            </table>
+        </div>
+        {% if is_paginated %}
+            <nav>
+                <ul class="pagination">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item"><a class="page-link" href="?item_q={{ item_q|urlencode }}&location_q={{ location_q|urlencode }}&category_q={{ category_q|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a></li>
+                    {% endif %}
+                    <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+                    {% if page_obj.has_next %}
+                        <li class="page-item"><a class="page-link" href="?item_q={{ item_q|urlencode }}&location_q={{ location_q|urlencode }}&category_q={{ category_q|urlencode }}&page={{ page_obj.next_page_number }}">Next</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+    {% else %}
+        <p class="text-muted">No items match your search.</p>
+    {% endif %}
+{% endblock %}

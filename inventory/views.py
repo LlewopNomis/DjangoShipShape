@@ -32,6 +32,46 @@ from .models import (
 )
 
 
+def _multiword_filter(queryset, query, field_lookups):
+    """AND together whitespace-separated terms, each matching any of the given lookups."""
+    for term in query.split():
+        term_q = Q()
+        for lookup in field_lookups:
+            term_q |= Q(**{lookup: term})
+        queryset = queryset.filter(term_q)
+    return queryset
+
+
+def search_items(queryset, query):
+    """Filter an InventoryItem queryset with a loose, multi-word search.
+
+    Each whitespace-separated term must match somewhere (name, notes,
+    category or location) but terms can match different fields and in any
+    order, so "thread insert" finds a "Threaded Insert" item filed under a
+    "Fasteners" category without the user needing the exact name/order.
+    """
+    return _multiword_filter(
+        queryset, query,
+        ['name__icontains', 'notes__icontains', 'category__name__icontains', 'location__name__icontains'],
+    )
+
+
+def search_item_text(queryset, query):
+    """Filter an InventoryItem queryset by a loose, multi-word match on name/notes only."""
+    return _multiword_filter(queryset, query, ['name__icontains', 'notes__icontains'])
+
+
+def tree_search_ids(model, query):
+    """Wildcard-match a Location/ItemCategory tree by name and return the pks of every
+    matching node plus its descendants, so e.g. searching "Galley" also picks up items
+    filed under "Galley > Under Sink"."""
+    matched = _multiword_filter(model.objects.all(), query, ['name__icontains'])
+    ids = set()
+    for node in matched:
+        ids.update(model.get_tree(node).values_list('pk', flat=True))
+    return ids
+
+
 class HomeView(TemplateView):
     template_name = 'inventory/home.html'
 
@@ -66,7 +106,12 @@ class LocationDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         context['children'] = self.object.get_children()
         context['ancestors'] = self.object.get_ancestors()
-        context['items'] = self.object.items.select_related('category').prefetch_related('photos')
+        items = self.object.items.select_related('category').prefetch_related('photos')
+        query = self.request.GET.get('q', '')
+        if query:
+            items = search_items(items, query)
+        context['items'] = items
+        context['query'] = query
         context['photos'] = self.object.photos.all()
         context['photo_form'] = LocationPhotoForm()
         return context
@@ -165,7 +210,12 @@ class ItemCategoryDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         context['children'] = self.object.get_children()
         context['ancestors'] = self.object.get_ancestors()
-        context['items'] = self.object.items.select_related('location')
+        items = self.object.items.select_related('location')
+        query = self.request.GET.get('q', '')
+        if query:
+            items = search_items(items, query)
+        context['items'] = items
+        context['query'] = query
         return context
 
 
@@ -230,7 +280,7 @@ class InventoryItemListView(ListView):
         qs = InventoryItem.objects.select_related('category', 'location')
         query = self.request.GET.get('q')
         if query:
-            qs = qs.filter(Q(name__icontains=query) | Q(notes__icontains=query))
+            qs = search_items(qs, query)
         category_id = self.request.GET.get('category')
         if category_id:
             category = get_object_or_404(ItemCategory, pk=category_id)
@@ -251,6 +301,40 @@ class InventoryItemListView(ListView):
         context['selected_category'] = self.request.GET.get('category', '')
         context['selected_location'] = self.request.GET.get('location', '')
         context['filtered_total_value'] = self.get_queryset().aggregate(total=Sum('value'))['total']
+        return context
+
+
+class InventorySearchView(ListView):
+    """One page, three independent wildcard filters (item text, location, category).
+    With nothing entered it just lists every item."""
+
+    model = InventoryItem
+    template_name = 'inventory/search.html'
+    context_object_name = 'items'
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = InventoryItem.objects.select_related('category', 'location')
+        item_q = self.request.GET.get('item_q', '').strip()
+        if item_q:
+            qs = search_item_text(qs, item_q)
+        location_q = self.request.GET.get('location_q', '').strip()
+        if location_q:
+            qs = qs.filter(location_id__in=tree_search_ids(Location, location_q))
+        category_q = self.request.GET.get('category_q', '').strip()
+        if category_q:
+            qs = qs.filter(category_id__in=tree_search_ids(ItemCategory, category_q))
+        return qs.order_by('name')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['item_q'] = self.request.GET.get('item_q', '')
+        context['location_q'] = self.request.GET.get('location_q', '')
+        context['category_q'] = self.request.GET.get('category_q', '')
+        context['filtered_total_value'] = self.get_queryset().aggregate(total=Sum('value'))['total']
+        context['item_name_options'] = InventoryItem.objects.order_by('name').values_list('name', flat=True).distinct()
+        context['location_options'] = Location.get_tree()
+        context['category_options'] = ItemCategory.get_tree()
         return context
 
 

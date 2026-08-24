@@ -21,6 +21,8 @@ urlpatterns = [
     path('categories/<int:pk>/edit/', views.ItemCategoryUpdateView.as_view(), name='category_edit'),
     path('categories/<int:pk>/delete/', views.ItemCategoryDeleteView.as_view(), name='category_delete'),
 
+    path('search/', views.InventorySearchView.as_view(), name='search'),
+
     path('items/', views.InventoryItemListView.as_view(), name='item_list'),
     path('items/add/', views.InventoryItemCreateView.as_view(), name='item_add'),
     path('items/<int:pk>/', views.InventoryItemDetailView.as_view(), name='item_detail'),
