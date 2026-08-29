@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load inventory_extras %}
 {% block title %}Categories — ShipShape{% endblock %}
 {% block content %}
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -7,15 +8,7 @@
     </div>
 
     {% if categories %}
-        <div class="list-group">
-            {% for cat in categories %}
-                <a href="{% url 'inventory:category_detail' cat.pk %}" class="list-group-item list-group-item-action tree-row">
-                    <span class="tree-indent">{% for n in cat.get_ancestors %}&nbsp;&nbsp;&nbsp;&nbsp;{% endfor %}</span>
-                    <span>🏷️ {{ cat.name }}</span>
-                    {% if cat.description %}<span class="text-muted small ms-2">— {{ cat.description|truncatechars:60 }}</span>{% endif %}
-                </a>
-            {% endfor %}
-        </div>
+        {% tree_list categories 'inventory:category_detail' branch_icon='🏷️' leaf_icon='🏷️' %}
     {% else %}
         <p class="text-muted">No categories yet. <a href="{% url 'inventory:category_add' %}">Add your first category</a> (e.g. "Tools", "Spares").</p>
     {% endif %}

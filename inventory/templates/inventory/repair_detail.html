@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load inventory_extras %}
 {% block title %}{{ repair.title }} — ShipShape{% endblock %}
 {% block content %}
     <nav aria-label="breadcrumb">
@@ -35,7 +36,8 @@
             {% for c in consumed_items %}
                 <tr>
                     <td><a href="{% url 'inventory:item_detail' c.item.pk %}">{{ c.item.name }}</a></td>
-                    <td>{{ c.quantity }}</td>
+                    <td>{{ c.quantity|qty }}</td>
+                    <td>{% if c.cost %}${{ c.cost|floatformat:"2g" }}{% else %}—{% endif %}</td>
                     <td class="text-end">
                         <form method="post" action="{% url 'inventory:repair_consumed_item_delete' c.pk %}" onsubmit="return confirm('Remove this and restore stock?');">
                             {% csrf_token %}
@@ -51,10 +53,30 @@
     {% endif %}
     <form method="post" action="{% url 'inventory:repair_consume_item' repair.pk %}" class="row g-2 align-items-end mb-4">
         {% csrf_token %}
-        <div class="col-auto">{{ consume_form.item }}</div>
+        <div class="col-auto" style="min-width: 320px;">
+            <input type="text" id="consume-item-search" class="form-control" list="consume-item-options"
+                   placeholder="Type to search, e.g. &quot;salt&quot;..." autocomplete="off">
+            <datalist id="consume-item-options">
+                {% for si in stock_items %}<option value="{{ si.label }}">{% endfor %}
+            </datalist>
+            {{ consume_form.item }}
+        </div>
         <div class="col-auto" style="max-width: 100px;">{{ consume_form.quantity }}</div>
         <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Record use</button></div>
     </form>
+    {{ stock_items|json_script:"consume-item-data" }}
+    <script>
+        (function () {
+            var data = JSON.parse(document.getElementById('consume-item-data').textContent);
+            var labelToId = {};
+            data.forEach(function (si) { labelToId[si.label] = si.id; });
+            var search = document.getElementById('consume-item-search');
+            var hidden = document.getElementById('id_item');
+            search.addEventListener('input', function () {
+                hidden.value = labelToId[search.value] || '';
+            });
+        })();
+    </script>
 
     <h6>Photos &amp; documents</h6>
     <div class="d-flex flex-wrap gap-3 mb-2">

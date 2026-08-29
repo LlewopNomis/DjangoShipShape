@@ -29,7 +29,7 @@
         <div class="col-md-3">
             <div class="card text-center">
                 <div class="card-body">
-                    <div class="display-6">{% if total_value %}${{ total_value }}{% else %}—{% endif %}</div>
+                    <div class="display-6">{% if total_value %}${{ total_value|floatformat:"2g" }}{% else %}—{% endif %}</div>
                     <div class="text-muted">Known value</div>
                 </div>
             </div>

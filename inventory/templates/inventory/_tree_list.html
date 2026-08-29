@@ -1,0 +1,78 @@
+{% if nodes %}
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <label for="tree-depth-{{ detail_url_name|slugify }}" class="form-label small text-muted mb-0">Expand to depth</label>
+        <input type="number" id="tree-depth-{{ detail_url_name|slugify }}" class="form-control form-control-sm" style="width: 70px;"
+               min="1" max="{{ max_depth }}" value="{{ default_depth }}"
+               onchange="window.__treeSetDepth(this)">
+        <span class="text-muted small">of {{ max_depth }}</span>
+    </div>
+    <div class="list-group tree-list-wrapper" data-max-depth="{{ max_depth }}">
+        <div class="tree-list">
+            {% for node in nodes %}
+                <div class="list-group-item tree-row" data-depth="{{ node.depth }}"
+                     data-collapsed="{% if node.depth >= default_depth %}true{% else %}false{% endif %}">
+                    <span class="tree-indent-space" style="--depth: {{ node.depth|add:"-1" }};"></span>
+                    {% if not node.is_leaf %}
+                        <button type="button" class="tree-toggle" onclick="window.__treeToggle(this)" aria-label="Expand/collapse">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <path d="M2 1 L7 5 L2 9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    {% else %}
+                        <span class="tree-toggle-spacer"></span>
+                    {% endif %}
+                    <a href="{% url detail_url_name node.pk %}" class="tree-link">
+                        {% if node.is_leaf %}{{ leaf_icon }}{% else %}{{ branch_icon }}{% endif %} {{ node.name }}
+                    </a>
+                    {% if node.value %}<span class="text-muted small ms-2">${{ node.value|floatformat:"2g" }}</span>{% endif %}
+                    {% if node.description %}<span class="text-muted small ms-2">— {{ node.description|truncatechars:60 }}</span>{% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+    <script>
+        (function () {
+            function recompute(root) {
+                var collapsedDepths = [];
+                root.querySelectorAll('.tree-row').forEach(function (row) {
+                    var depth = parseInt(row.dataset.depth, 10);
+                    while (collapsedDepths.length && depth <= collapsedDepths[collapsedDepths.length - 1]) {
+                        collapsedDepths.pop();
+                    }
+                    var hidden = collapsedDepths.length > 0;
+                    row.style.display = hidden ? 'none' : '';
+                    var toggle = row.querySelector('.tree-toggle');
+                    if (toggle) {
+                        toggle.classList.toggle('tree-toggle-collapsed', row.dataset.collapsed === 'true');
+                    }
+                    if (!hidden && row.dataset.collapsed === 'true') {
+                        collapsedDepths.push(depth);
+                    }
+                });
+            }
+
+            window.__treeToggle = function (btn) {
+                var row = btn.closest('.tree-row');
+                var root = btn.closest('.tree-list');
+                row.dataset.collapsed = row.dataset.collapsed === 'true' ? 'false' : 'true';
+                recompute(root);
+            };
+
+            window.__treeSetDepth = function (input) {
+                var wrapper = input.closest('.tree-list-wrapper');
+                var root = wrapper.querySelector('.tree-list');
+                var maxDepth = parseInt(wrapper.dataset.maxDepth, 10);
+                var depth = parseInt(input.value, 10);
+                if (!depth || depth < 1) depth = 1;
+                if (depth > maxDepth) depth = maxDepth;
+                input.value = depth;
+                root.querySelectorAll('.tree-row').forEach(function (row) {
+                    row.dataset.collapsed = (parseInt(row.dataset.depth, 10) >= depth) ? 'true' : 'false';
+                });
+                recompute(root);
+            };
+
+            document.querySelectorAll('.tree-list').forEach(recompute);
+        })();
+    </script>
+{% endif %}

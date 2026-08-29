@@ -30,6 +30,11 @@ urlpatterns = [
     path('items/<int:pk>/delete/', views.InventoryItemDeleteView.as_view(), name='item_delete'),
     path('items/<int:pk>/photo/add/', views.item_photo_add, name='item_photo_add'),
     path('items/photo/<int:pk>/delete/', views.item_photo_delete, name='item_photo_delete'),
+    path('items/<int:pk>/spares/add/', views.spare_add, name='spare_add'),
+    path('spares/<int:pk>/edit/', views.SpareUpdateView.as_view(), name='spare_edit'),
+    path('spares/<int:pk>/delete/', views.spare_delete, name='spare_delete'),
+    path('spares/<int:pk>/photo/add/', views.spare_photo_add, name='spare_photo_add'),
+    path('spares/photo/<int:pk>/delete/', views.spare_photo_delete, name='spare_photo_delete'),
 
     path('repair-categories/', views.RepairCategoryListView.as_view(), name='repair_category_list'),
     path('repair-categories/add/', views.RepairCategoryCreateView.as_view(), name='repair_category_add'),

@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import ProtectedError, Q, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, ProtectedError, Q, Sum
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
@@ -18,6 +18,9 @@ from .forms import (
     RepairConsumedItemForm,
     RepairForm,
     RepairPhotoForm,
+    SpareForm,
+    SparePhotoForm,
+    stock_item_label,
 )
 from .models import (
     InventoryItem,
@@ -29,7 +32,70 @@ from .models import (
     RepairCategory,
     RepairConsumedItem,
     RepairPhoto,
+    Spare,
+    SparePhoto,
+    format_quantity,
 )
+
+
+def total_value_expr():
+    """quantity * unit_price as a queryset expression, for aggregating known total value."""
+    return ExpressionWrapper(F('quantity') * F('unit_price'), output_field=DecimalField(max_digits=12, decimal_places=2))
+
+
+# Sortable columns on the search page. Values are either a field lookup string
+# (passed straight to order_by) or an expression exposing .asc()/.desc() (for
+# 'total', which isn't a real column — it's quantity x unit_price).
+SEARCH_SORT_FIELDS = {
+    'name': 'name',
+    'category': 'category__name',
+    'location': 'location__name',
+    'quantity': 'quantity',
+    'unit': 'unit__name',
+    'unit_price': 'unit_price',
+    'total': total_value_expr(),
+    'condition': 'condition',
+}
+
+
+# Sortable columns on the repair log page.
+REPAIR_SORT_FIELDS = {
+    'date': 'date',
+    'title': 'title',
+    'category': 'category__name',
+    'location': 'location__name',
+    'hours': 'hours_spent',
+    # A plain field-name lookup, same as the others — but only safe because
+    # RepairListView.get_queryset() annotates 'cost' (a Sum) before sorting.
+    # Sorting by the raw per-row repair_cost_expr() instead would join across
+    # the to-many consumed_items relation unaggregated and duplicate rows.
+    'cost': 'cost',
+}
+
+
+def repair_cost_expr():
+    """Cost of a repair's consumed parts (consumption.quantity x item.unit_price),
+    summed across its RepairConsumedItem rows via Sum(repair_cost_expr()) in
+    an annotate() — never order_by this raw expression directly (see
+    REPAIR_SORT_FIELDS['cost'])."""
+    return ExpressionWrapper(
+        F('consumed_items__quantity') * F('consumed_items__item__unit_price'),
+        output_field=DecimalField(max_digits=12, decimal_places=2),
+    )
+
+
+def apply_sort(queryset, sort, sort_fields, default='name'):
+    """Order a queryset by GET param 'sort' (e.g. 'name' or '-name'), validated
+    against a field-name -> lookup/expression whitelist. Falls back to `default`
+    ascending for an empty or unrecognised value."""
+    field = sort.lstrip('-')
+    descending = sort.startswith('-')
+    order_source = sort_fields.get(field)
+    if order_source is None:
+        return queryset.order_by(default)
+    if isinstance(order_source, str):
+        return queryset.order_by(f'-{order_source}' if descending else order_source)
+    return queryset.order_by(order_source.desc() if descending else order_source.asc())
 
 
 def _multiword_filter(queryset, query, field_lookups):
@@ -80,7 +146,7 @@ class HomeView(TemplateView):
         context['location_count'] = Location.objects.count()
         context['category_count'] = ItemCategory.objects.count()
         context['item_count'] = InventoryItem.objects.count()
-        context['total_value'] = InventoryItem.objects.aggregate(total=Sum('value'))['total']
+        context['total_value'] = InventoryItem.objects.aggregate(total=Sum(total_value_expr()))['total']
         context['recent_items'] = InventoryItem.objects.order_by('-date_added')[:8]
         context['recent_repairs'] = Repair.objects.select_related('category', 'location')[:8]
         return context
@@ -106,14 +172,17 @@ class LocationDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         context['children'] = self.object.get_children()
         context['ancestors'] = self.object.get_ancestors()
-        items = self.object.items.select_related('category').prefetch_related('photos')
+        items = self.object.items.select_related('category', 'unit').prefetch_related('photos')
         query = self.request.GET.get('q', '')
         if query:
             items = search_items(items, query)
+        items = apply_sort(items, self.request.GET.get('sort', ''), SEARCH_SORT_FIELDS)
         context['items'] = items
         context['query'] = query
+        context['items_total_value'] = items.aggregate(total=Sum(total_value_expr()))['total']
         context['photos'] = self.object.photos.all()
         context['photo_form'] = LocationPhotoForm()
+        context['spares'] = self.object.spares.select_related('item', 'unit')
         return context
 
 
@@ -131,7 +200,11 @@ class LocationCreateView(CreateView):
 
     def form_valid(self, form):
         parent = form.cleaned_data['parent']
-        data = {'name': form.cleaned_data['name'], 'description': form.cleaned_data['description']}
+        data = {
+            'name': form.cleaned_data['name'],
+            'description': form.cleaned_data['description'],
+            'value': form.cleaned_data['value'],
+        }
         self.object = parent.add_child(**data) if parent else Location.add_root(**data)
         messages.success(self.request, f'Location "{self.object.name}" created.')
         return HttpResponseRedirect(self.get_success_url())
@@ -210,12 +283,14 @@ class ItemCategoryDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         context['children'] = self.object.get_children()
         context['ancestors'] = self.object.get_ancestors()
-        items = self.object.items.select_related('location')
+        items = self.object.items.select_related('location', 'unit').prefetch_related('photos')
         query = self.request.GET.get('q', '')
         if query:
             items = search_items(items, query)
+        items = apply_sort(items, self.request.GET.get('sort', ''), SEARCH_SORT_FIELDS)
         context['items'] = items
         context['query'] = query
+        context['items_total_value'] = items.aggregate(total=Sum(total_value_expr()))['total']
         return context
 
 
@@ -277,7 +352,7 @@ class InventoryItemListView(ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        qs = InventoryItem.objects.select_related('category', 'location')
+        qs = InventoryItem.objects.select_related('category', 'location', 'unit').prefetch_related('photos')
         query = self.request.GET.get('q')
         if query:
             qs = search_items(qs, query)
@@ -291,7 +366,7 @@ class InventoryItemListView(ListView):
             location = get_object_or_404(Location, pk=location_id)
             descendants = Location.get_tree(location)
             qs = qs.filter(location__in=descendants)
-        return qs.order_by('name')
+        return apply_sort(qs, self.request.GET.get('sort', ''), SEARCH_SORT_FIELDS)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -300,7 +375,8 @@ class InventoryItemListView(ListView):
         context['locations'] = Location.get_tree()
         context['selected_category'] = self.request.GET.get('category', '')
         context['selected_location'] = self.request.GET.get('location', '')
-        context['filtered_total_value'] = self.get_queryset().aggregate(total=Sum('value'))['total']
+        context['sort'] = self.request.GET.get('sort', '')
+        context['filtered_total_value'] = self.get_queryset().aggregate(total=Sum(total_value_expr()))['total']
         return context
 
 
@@ -314,7 +390,7 @@ class InventorySearchView(ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        qs = InventoryItem.objects.select_related('category', 'location')
+        qs = InventoryItem.objects.select_related('category', 'location', 'unit').prefetch_related('photos')
         item_q = self.request.GET.get('item_q', '').strip()
         if item_q:
             qs = search_item_text(qs, item_q)
@@ -324,14 +400,15 @@ class InventorySearchView(ListView):
         category_q = self.request.GET.get('category_q', '').strip()
         if category_q:
             qs = qs.filter(category_id__in=tree_search_ids(ItemCategory, category_q))
-        return qs.order_by('name')
+        return apply_sort(qs, self.request.GET.get('sort', ''), SEARCH_SORT_FIELDS)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['item_q'] = self.request.GET.get('item_q', '')
         context['location_q'] = self.request.GET.get('location_q', '')
+        context['sort'] = self.request.GET.get('sort', '')
         context['category_q'] = self.request.GET.get('category_q', '')
-        context['filtered_total_value'] = self.get_queryset().aggregate(total=Sum('value'))['total']
+        context['filtered_total_value'] = self.get_queryset().aggregate(total=Sum(total_value_expr()))['total']
         context['item_name_options'] = InventoryItem.objects.order_by('name').values_list('name', flat=True).distinct()
         context['location_options'] = Location.get_tree()
         context['category_options'] = ItemCategory.get_tree()
@@ -347,6 +424,8 @@ class InventoryItemDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         context['photos'] = self.object.photos.all()
         context['photo_form'] = ItemPhotoForm()
+        context['spares'] = self.object.spares.select_related('location', 'unit')
+        context['spare_form'] = SpareForm()
         return context
 
 
@@ -405,6 +484,70 @@ def item_photo_delete(request, pk):
     return redirect('inventory:item_detail', pk=item_pk)
 
 
+def spare_add(request, pk):
+    item = get_object_or_404(InventoryItem, pk=pk)
+    if request.method == 'POST':
+        form = SpareForm(request.POST)
+        if form.is_valid():
+            spare = form.save(commit=False)
+            spare.item = item
+            spare.save()
+            messages.success(request, f'Spare "{spare.name}" added.')
+        else:
+            for field_errors in form.errors.values():
+                for error in field_errors:
+                    messages.error(request, error)
+    return redirect('inventory:item_detail', pk=item.pk)
+
+
+class SpareUpdateView(UpdateView):
+    model = Spare
+    form_class = SpareForm
+    template_name = 'inventory/spare_form.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['photos'] = self.object.photos.all()
+        context['photo_form'] = SparePhotoForm()
+        return context
+
+    def get_success_url(self):
+        return reverse('inventory:item_detail', args=[self.object.item_id])
+
+
+def spare_delete(request, pk):
+    spare = get_object_or_404(Spare, pk=pk)
+    item_pk = spare.item_id
+    if request.method == 'POST':
+        spare.delete()
+        messages.success(request, 'Spare removed.')
+    return redirect('inventory:item_detail', pk=item_pk)
+
+
+def spare_photo_add(request, pk):
+    spare = get_object_or_404(Spare, pk=pk)
+    if request.method == 'POST':
+        form = SparePhotoForm(request.POST, request.FILES)
+        if form.is_valid():
+            photo = form.save(commit=False)
+            photo.spare = spare
+            photo.save()
+            messages.success(request, 'Photo added.')
+        else:
+            for error in form.errors.get('image', []):
+                messages.error(request, error)
+    return redirect('inventory:spare_edit', pk=spare.pk)
+
+
+def spare_photo_delete(request, pk):
+    photo = get_object_or_404(SparePhoto, pk=pk)
+    spare_pk = photo.spare_id
+    if request.method == 'POST':
+        photo.delete()
+        messages.success(request, 'Photo removed.')
+    return redirect('inventory:spare_edit', pk=spare_pk)
+
+
 # --- Repair categories ---------------------------------------------------
 
 class RepairCategoryListView(ListView):
@@ -439,12 +582,14 @@ class RepairListView(ListView):
         category_id = self.request.GET.get('category')
         if category_id:
             qs = qs.filter(category_id=category_id)
-        return qs
+        qs = qs.annotate(cost=Sum(repair_cost_expr()))
+        return apply_sort(qs, self.request.GET.get('sort', ''), REPAIR_SORT_FIELDS, default='-date')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['categories'] = RepairCategory.objects.all()
         context['selected_category'] = self.request.GET.get('category', '')
+        context['sort'] = self.request.GET.get('sort', '')
         return context
 
 
@@ -459,6 +604,10 @@ class RepairDetailView(DetailView):
         context['photos'] = self.object.photos.all()
         context['photo_form'] = RepairPhotoForm()
         context['consume_form'] = RepairConsumedItemForm()
+        context['stock_items'] = [
+            {'id': i.pk, 'label': stock_item_label(i)}
+            for i in InventoryItem.objects.select_related('location').order_by('name')
+        ]
         return context
 
 
@@ -535,15 +684,19 @@ def repair_consume_item(request, pk):
                 consumption.repair = repair
                 item = InventoryItem.objects.select_for_update().get(pk=consumption.item_id)
                 if consumption.quantity > item.quantity:
-                    form.add_error(None, f'Only {item.quantity} of "{item.name}" in stock.')
+                    form.add_error(None, f'Only {format_quantity(item.quantity)} of "{item.name}" in stock.')
                 else:
                     item.quantity -= consumption.quantity
                     item.save(update_fields=['quantity'])
                     consumption.save()
-                    messages.success(request, f'Recorded {consumption.quantity} x {item.name} used on this repair.')
+                    messages.success(
+                        request,
+                        f'Recorded {format_quantity(consumption.quantity)} x {item.name} used on this repair.',
+                    )
         if not form.is_valid():
-            for error in form.non_field_errors():
-                messages.error(request, error)
+            for field_errors in form.errors.values():
+                for error in field_errors:
+                    messages.error(request, error)
     return redirect('inventory:repair_detail', pk=repair.pk)
 
 

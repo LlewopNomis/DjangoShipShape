@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load inventory_extras %}
 {% block title %}Search — ShipShape{% endblock %}
 {% block content %}
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -46,16 +47,29 @@
         <div class="table-responsive">
             <table class="table table-hover align-middle">
                 <thead>
-                    <tr><th>Name</th><th>Category</th><th>Location</th><th>Qty</th><th>Value</th><th>Condition</th></tr>
+                    <tr>
+                        <th></th>
+                        <th>{% sort_header "name" "Name" %}</th>
+                        <th>{% sort_header "category" "Category" %}</th>
+                        <th>{% sort_header "location" "Location" %}</th>
+                        <th>{% sort_header "quantity" "Qty" %}</th>
+                        <th>{% sort_header "unit" "Unit" %}</th>
+                        <th>{% sort_header "unit_price" "Unit price" %}</th>
+                        <th>{% sort_header "total" "Total" %}</th>
+                        <th>{% sort_header "condition" "Condition" %}</th>
+                    </tr>
                 </thead>
                 <tbody>
                 {% for item in items %}
                     <tr>
+                        <td>{% item_thumb item %}</td>
                         <td><a href="{% url 'inventory:item_detail' item.pk %}">{{ item.name }}</a></td>
                         <td>{% if item.category %}<a href="{% url 'inventory:category_detail' item.category.pk %}">{{ item.category }}</a>{% else %}—{% endif %}</td>
                         <td><a href="{% url 'inventory:location_detail' item.location.pk %}">{{ item.location }}</a></td>
-                        <td>{{ item.quantity }}</td>
-                        <td>{% if item.value %}${{ item.value }}{% else %}—{% endif %}</td>
+                        <td>{{ item.quantity|qty }}</td>
+                        <td>{{ item.unit|default:"—" }}</td>
+                        <td>{% if item.unit_price %}${{ item.unit_price|floatformat:"2g" }}{% else %}—{% endif %}</td>
+                        <td>{% if item.total_value %}${{ item.total_value|floatformat:"2g" }}{% else %}—{% endif %}</td>
                         <td>{{ item.get_condition_display }}</td>
                     </tr>
                 {% endfor %}
@@ -63,8 +77,8 @@
                 {% if filtered_total_value %}
                     <tfoot>
                         <tr class="table-light">
-                            <td colspan="4" class="text-end fw-semibold">Total known value:</td>
-                            <td class="fw-semibold">${{ filtered_total_value }}</td>
+                            <td colspan="7" class="text-end fw-semibold">Total known value:</td>
+                            <td class="fw-semibold">${{ filtered_total_value|floatformat:"2g" }}</td>
                             <td></td>
                         </tr>
                     </tfoot>
@@ -75,11 +89,11 @@
             <nav>
                 <ul class="pagination">
                     {% if page_obj.has_previous %}
-                        <li class="page-item"><a class="page-link" href="?item_q={{ item_q|urlencode }}&location_q={{ location_q|urlencode }}&category_q={{ category_q|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a></li>
+                        <li class="page-item"><a class="page-link" href="?item_q={{ item_q|urlencode }}&location_q={{ location_q|urlencode }}&category_q={{ category_q|urlencode }}&sort={{ sort|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a></li>
                     {% endif %}
                     <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
                     {% if page_obj.has_next %}
-                        <li class="page-item"><a class="page-link" href="?item_q={{ item_q|urlencode }}&location_q={{ location_q|urlencode }}&category_q={{ category_q|urlencode }}&page={{ page_obj.next_page_number }}">Next</a></li>
+                        <li class="page-item"><a class="page-link" href="?item_q={{ item_q|urlencode }}&location_q={{ location_q|urlencode }}&category_q={{ category_q|urlencode }}&sort={{ sort|urlencode }}&page={{ page_obj.next_page_number }}">Next</a></li>
                     {% endif %}
                 </ul>
             </nav>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load inventory_extras %}
 {% block title %}Locations — ShipShape{% endblock %}
 {% block content %}
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -7,15 +8,7 @@
     </div>
 
     {% if locations %}
-        <div class="list-group">
-            {% for loc in locations %}
-                <a href="{% url 'inventory:location_detail' loc.pk %}" class="list-group-item list-group-item-action tree-row">
-                    <span class="tree-indent">{% for n in loc.get_ancestors %}&nbsp;&nbsp;&nbsp;&nbsp;{% endfor %}</span>
-                    <span>{% if loc.is_leaf %}📦{% else %}📁{% endif %} {{ loc.name }}</span>
-                    {% if loc.description %}<span class="text-muted small ms-2">— {{ loc.description|truncatechars:60 }}</span>{% endif %}
-                </a>
-            {% endfor %}
-        </div>
+        {% tree_list locations 'inventory:location_detail' %}
     {% else %}
         <p class="text-muted">No locations yet. <a href="{% url 'inventory:location_add' %}">Add your first location</a> (e.g. "Galley", "Aft cabin").</p>
     {% endif %}

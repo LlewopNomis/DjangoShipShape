@@ -10,6 +10,10 @@ from .models import (
     RepairCategory,
     RepairConsumedItem,
     RepairPhoto,
+    Spare,
+    SparePhoto,
+    Unit,
+    format_quantity,
 )
 
 
@@ -47,7 +51,7 @@ class LocationForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
         model = Location
-        fields = ['name', 'description']
+        fields = ['name', 'description', 'value']
 
 
 class LocationEditForm(BootstrapFormMixin, forms.ModelForm):
@@ -56,7 +60,7 @@ class LocationEditForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
         model = Location
-        fields = ['name', 'description']
+        fields = ['name', 'description', 'value']
 
 
 class ItemCategoryForm(BootstrapFormMixin, forms.ModelForm):
@@ -84,13 +88,33 @@ class InventoryItemForm(BootstrapFormMixin, forms.ModelForm):
     location = IndentedModelChoiceField(
         queryset=Location.objects.all(), required=True,
     )
+    unit = forms.ModelChoiceField(queryset=Unit.objects.all(), required=False)
 
     class Meta:
         model = InventoryItem
-        fields = ['name', 'category', 'location', 'quantity', 'value', 'condition', 'notes']
+        fields = ['name', 'category', 'location', 'quantity', 'unit', 'unit_price', 'condition', 'notes']
+
+
+class SpareForm(BootstrapFormMixin, forms.ModelForm):
+    location = IndentedModelChoiceField(queryset=Location.objects.all(), required=True)
+    unit = forms.ModelChoiceField(queryset=Unit.objects.all(), required=False)
+
+    class Meta:
+        model = Spare
+        fields = ['name', 'location', 'quantity', 'unit', 'unit_price', 'notes']
+
+    def clean_unit_price(self):
+        return self.cleaned_data.get('unit_price') or 0
 
 
 ATTACHMENT_FILE_INPUT = forms.ClearableFileInput(attrs={'accept': 'image/*,.pdf'})
+
+
+class SparePhotoForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = SparePhoto
+        fields = ['image', 'caption', 'is_primary', 'is_receipt']
+        widgets = {'image': ATTACHMENT_FILE_INPUT}
 
 
 class ItemPhotoForm(BootstrapFormMixin, forms.ModelForm):
@@ -103,8 +127,12 @@ class ItemPhotoForm(BootstrapFormMixin, forms.ModelForm):
 class LocationPhotoForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = LocationPhoto
-        fields = ['image', 'caption', 'is_primary']
+        fields = ['image', 'caption', 'is_primary', 'is_receipt']
         widgets = {'image': ATTACHMENT_FILE_INPUT}
+
+
+def stock_item_label(item):
+    return f'{item.name} — {format_quantity(item.quantity)} in stock ({item.location})'
 
 
 class ItemStockChoiceField(forms.ModelChoiceField):
@@ -112,7 +140,7 @@ class ItemStockChoiceField(forms.ModelChoiceField):
     obvious what's available to consume in a repair."""
 
     def label_from_instance(self, obj):
-        return f'{obj.name} — {obj.quantity} in stock ({obj.location})'
+        return stock_item_label(obj)
 
 
 class RepairCategoryForm(BootstrapFormMixin, forms.ModelForm):
@@ -138,7 +166,20 @@ class RepairPhotoForm(BootstrapFormMixin, forms.ModelForm):
 
 
 class RepairConsumedItemForm(BootstrapFormMixin, forms.ModelForm):
-    item = ItemStockChoiceField(queryset=InventoryItem.objects.select_related('location').order_by('name'))
+    """'item' is driven by a type-to-search box in the template (see
+    stock_items/json_script in RepairDetailView) rather than a long <select> —
+    with 100+ inventory items a plain dropdown is unusable. The field itself
+    stays a real ModelChoiceField so an unresolved/tampered value is still
+    rejected by validation; only its widget is hidden."""
+
+    item = ItemStockChoiceField(
+        queryset=InventoryItem.objects.select_related('location').order_by('name'),
+        widget=forms.HiddenInput(),
+        error_messages={
+            'invalid_choice': 'Pick an item from the search list.',
+            'required': 'Type to search, then pick an item from the list.',
+        },
+    )
 
     class Meta:
         model = RepairConsumedItem
@@ -150,6 +191,7 @@ class RepairConsumedItemForm(BootstrapFormMixin, forms.ModelForm):
         quantity = cleaned_data.get('quantity')
         if item and quantity and quantity > item.quantity:
             raise forms.ValidationError(
-                f'Only {item.quantity} of "{item.name}" in stock — cannot consume {quantity}.'
+                f'Only {format_quantity(item.quantity)} of "{item.name}" in stock — '
+                f'cannot consume {format_quantity(quantity)}.'
             )
         return cleaned_data
