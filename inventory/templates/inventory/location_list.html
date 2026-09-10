@@ -8,7 +8,7 @@
     </div>
 
     {% if locations %}
-        {% tree_list locations 'inventory:location_detail' %}
+        {% tree_list locations 'inventory:location_detail' count_param='location' %}
     {% else %}
         <p class="text-muted">No locations yet. <a href="{% url 'inventory:location_add' %}">Add your first location</a> (e.g. "Galley", "Aft cabin").</p>
     {% endif %}

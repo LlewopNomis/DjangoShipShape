@@ -8,7 +8,7 @@
     </div>
 
     {% if categories %}
-        {% tree_list categories 'inventory:category_detail' branch_icon='🏷️' leaf_icon='🏷️' %}
+        {% tree_list categories 'inventory:category_detail' branch_icon='🏷️' leaf_icon='🏷️' count_param='category' %}
     {% else %}
         <p class="text-muted">No categories yet. <a href="{% url 'inventory:category_add' %}">Add your first category</a> (e.g. "Tools", "Spares").</p>
     {% endif %}

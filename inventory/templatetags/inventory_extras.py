@@ -79,11 +79,16 @@ def item_thumb(item):
 
 
 @register.inclusion_tag('inventory/_tree_list.html')
-def tree_list(nodes, detail_url_name, branch_icon='📁', leaf_icon='📦', default_depth=3):
+def tree_list(nodes, detail_url_name, branch_icon='📁', leaf_icon='📦', default_depth=3, count_param=''):
     """Renders a treebeard node queryset (Location or ItemCategory) as a
     collapsible indented list: chevrons expand/collapse one node at a time,
     defaulting to `default_depth` levels open, plus a depth control that
-    jumps every node open/closed to a given depth at once."""
+    jumps every node open/closed to a given depth at once.
+
+    If the nodes carry an `.item_count` (see views.attach_subtree_item_counts),
+    each row shows that count linked to the item list filtered on `count_param`
+    ('location' or 'category') — so "how many, and what are they" is one click
+    away instead of a separate preview feature."""
     nodes = list(nodes)
     max_depth = max((n.depth for n in nodes), default=1)
     return {
@@ -93,4 +98,5 @@ def tree_list(nodes, detail_url_name, branch_icon='📁', leaf_icon='📦', defa
         'leaf_icon': leaf_icon,
         'default_depth': min(default_depth, max_depth),
         'max_depth': max_depth,
+        'count_param': count_param,
     }

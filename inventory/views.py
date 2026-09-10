@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import DecimalField, ExpressionWrapper, F, ProtectedError, Q, Sum
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, ProtectedError, Q, Sum
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
@@ -127,6 +127,24 @@ def search_item_text(queryset, query):
     return _multiword_filter(queryset, query, ['name__icontains', 'notes__icontains'])
 
 
+def attach_subtree_item_counts(nodes, direct_counts):
+    """Attach `.item_count` to each Location/ItemCategory node: the number of
+    items filed directly on it plus everywhere beneath it in the tree, so a
+    branch's count tells you whether it's worth expanding before you go
+    digging. `direct_counts` maps node pk -> count of items filed directly
+    on that node (e.g. from `.values('location_id').annotate(Count('id'))`).
+    `nodes` must be the full tree (every node has its parent present too),
+    e.g. from `Model.get_tree()`."""
+    nodes = list(nodes)
+    totals = {node.path: direct_counts.get(node.pk, 0) for node in nodes}
+    for node in sorted(nodes, key=lambda n: -len(n.path)):
+        node.item_count = totals[node.path]
+        if len(node.path) > node.steplen:
+            parent_path = node.path[:-node.steplen]
+            totals[parent_path] = totals.get(parent_path, 0) + node.item_count
+    return nodes
+
+
 def tree_search_ids(model, query):
     """Wildcard-match a Location/ItemCategory tree by name and return the pks of every
     matching node plus its descendants, so e.g. searching "Galley" also picks up items
@@ -160,7 +178,8 @@ class LocationListView(ListView):
     context_object_name = 'locations'
 
     def get_queryset(self):
-        return Location.get_tree()
+        direct_counts = dict(InventoryItem.objects.values('location_id').annotate(c=Count('id')).values_list('location_id', 'c'))
+        return attach_subtree_item_counts(Location.get_tree(), direct_counts)
 
 
 class LocationDetailView(DetailView):
@@ -271,7 +290,8 @@ class ItemCategoryListView(ListView):
     context_object_name = 'categories'
 
     def get_queryset(self):
-        return ItemCategory.get_tree()
+        direct_counts = dict(InventoryItem.objects.values('category_id').annotate(c=Count('id')).values_list('category_id', 'c'))
+        return attach_subtree_item_counts(ItemCategory.get_tree(), direct_counts)
 
 
 class ItemCategoryDetailView(DetailView):

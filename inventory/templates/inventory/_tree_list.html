@@ -25,6 +25,11 @@
                         {% if node.is_leaf %}{{ leaf_icon }}{% else %}{{ branch_icon }}{% endif %} {{ node.name }}
                     </a>
                     {% if node.value %}<span class="text-muted small ms-2">${{ node.value|floatformat:"2g" }}</span>{% endif %}
+                    {% if count_param and node.item_count %}
+                        <a href="{% url 'inventory:item_list' %}?{{ count_param }}={{ node.pk }}" class="text-muted small ms-2 tree-item-count" title="{{ node.item_count }} item{{ node.item_count|pluralize }} filed here or below">
+                            {{ node.item_count }} item{{ node.item_count|pluralize }}
+                        </a>
+                    {% endif %}
                     {% if node.description %}<span class="text-muted small ms-2">— {{ node.description|truncatechars:60 }}</span>{% endif %}
                 </div>
             {% endfor %}
