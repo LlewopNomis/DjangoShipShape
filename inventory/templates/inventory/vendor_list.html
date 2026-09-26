@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Vendors — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Vendors</h3>
+        <a href="{% url 'inventory:vendor_add' %}" class="btn btn-primary btn-sm">+ Add vendor</a>
+    </div>
+
+    {% if vendors %}
+        <div class="list-group">
+            {% for vendor in vendors %}
+                <a href="{% url 'inventory:vendor_detail' vendor.pk %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ vendor.name }}</strong>
+                        <div class="text-muted small">
+                            {{ vendor.contact_name }}
+                            {% if vendor.phone %} · {{ vendor.phone }}{% endif %}
+                            {% if vendor.email %} · {{ vendor.email }}{% endif %}
+                        </div>
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">No vendors yet. <a href="{% url 'inventory:vendor_add' %}">Add your first one</a>.</p>
+    {% endif %}
+{% endblock %}

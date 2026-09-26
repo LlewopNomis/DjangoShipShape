@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Parts catalogue — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Parts catalogue</h3>
+        <a href="{% url 'inventory:catalog_source_add' %}" class="btn btn-sm btn-primary">+ Add catalog</a>
+    </div>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-6">
+            <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search part number or description across every catalog...">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-outline-secondary w-100">Search</button>
+        </div>
+    </form>
+
+    {% if query %}
+        <h6>Matching parts</h6>
+        {% if part_results %}
+            <div class="list-group mb-4">
+                {% for part in part_results %}
+                    <a href="{% url 'inventory:catalog_section_detail' part.section_id %}#part-{{ part.pk }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ part.part_number }}</strong>
+                            {% if part.description %}<span class="text-muted small"> — {{ part.description }}</span>{% endif %}
+                        </div>
+                        <span class="text-muted small">{{ part.section.catalog.name }} · {{ part.section.name }}</span>
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted mb-4">No parts matched "{{ query }}".</p>
+        {% endif %}
+    {% endif %}
+
+    {% if catalogs %}
+        <div class="list-group">
+            {% for catalog in catalogs %}
+                <a href="{% url 'inventory:catalog_source_detail' catalog.pk %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ catalog.name }}</strong>
+                        <div class="text-muted small">
+                            {{ catalog.manufacturer }}
+                            {% if catalog.model_code %} · {{ catalog.model_code }}{% endif %}
+                        </div>
+                    </div>
+                    <span class="text-muted small">{{ catalog.sections.count }} section{{ catalog.sections.count|pluralize }}</span>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">No catalogs yet. <a href="{% url 'inventory:catalog_source_add' %}">Add your first one</a>.</p>
+    {% endif %}
+{% endblock %}

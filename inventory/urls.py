@@ -49,4 +49,41 @@ urlpatterns = [
     path('repairs/photo/<int:pk>/delete/', views.repair_photo_delete, name='repair_photo_delete'),
     path('repairs/<int:pk>/consume/', views.repair_consume_item, name='repair_consume_item'),
     path('repairs/consumed/<int:pk>/delete/', views.repair_consumed_item_delete, name='repair_consumed_item_delete'),
+
+    path('vendors/', views.VendorListView.as_view(), name='vendor_list'),
+    path('vendors/add/', views.VendorCreateView.as_view(), name='vendor_add'),
+    path('vendors/<int:pk>/', views.VendorDetailView.as_view(), name='vendor_detail'),
+    path('vendors/<int:pk>/edit/', views.VendorUpdateView.as_view(), name='vendor_edit'),
+    path('vendors/<int:pk>/delete/', views.VendorDeleteView.as_view(), name='vendor_delete'),
+
+    path('jobs/', views.JobListView.as_view(), name='job_list'),
+    path('jobs/add/', views.JobCreateView.as_view(), name='job_add'),
+    path('jobs/<int:pk>/', views.JobDetailView.as_view(), name='job_detail'),
+    path('jobs/<int:pk>/edit/', views.JobUpdateView.as_view(), name='job_edit'),
+    path('jobs/<int:pk>/delete/', views.JobDeleteView.as_view(), name='job_delete'),
+    path('jobs/<int:pk>/requirements/add/', views.requirement_add, name='requirement_add'),
+    path('jobs/<int:pk>/rfq/create/', views.rfq_create, name='rfq_create'),
+
+    path('requirements/<int:pk>/', views.RequirementDetailView.as_view(), name='requirement_detail'),
+    path('requirements/<int:pk>/edit/', views.RequirementUpdateView.as_view(), name='requirement_edit'),
+    path('requirements/<int:pk>/delete/', views.requirement_delete, name='requirement_delete'),
+    path('requirements/<int:pk>/rfq-vendor/', views.requirement_set_rfq_vendor, name='requirement_set_rfq_vendor'),
+    path('requirements/<int:pk>/options/add/', views.option_add, name='option_add'),
+
+    path('options/<int:pk>/edit/', views.OptionUpdateView.as_view(), name='option_edit'),
+    path('options/<int:pk>/delete/', views.option_delete, name='option_delete'),
+    path('options/<int:pk>/order/', views.option_order, name='option_order'),
+
+    path('catalog/', views.CatalogSourceListView.as_view(), name='catalog_source_list'),
+    path('catalog/add/', views.CatalogSourceCreateView.as_view(), name='catalog_source_add'),
+    path('catalog/<int:pk>/', views.CatalogSourceDetailView.as_view(), name='catalog_source_detail'),
+    path('catalog/<int:pk>/edit/', views.CatalogSourceUpdateView.as_view(), name='catalog_source_edit'),
+    path('catalog/<int:pk>/delete/', views.CatalogSourceDeleteView.as_view(), name='catalog_source_delete'),
+    path('catalog/sections/<int:pk>/', views.CatalogSectionDetailView.as_view(), name='catalog_section_detail'),
+
+    path('rfqs/', views.RfqListView.as_view(), name='rfq_list'),
+    path('rfqs/<int:pk>/', views.RfqDetailView.as_view(), name='rfq_detail'),
+    path('rfqs/<int:pk>/sent/', views.rfq_mark_sent, name='rfq_mark_sent'),
+    path('rfqs/<int:pk>/draft/', views.rfq_mark_draft, name='rfq_mark_draft'),
+    path('rfqs/<int:pk>/delete/', views.rfq_delete, name='rfq_delete'),
 ]

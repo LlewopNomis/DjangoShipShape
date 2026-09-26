@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Delete job — ShipShape{% endblock %}
+{% block content %}
+    <h3>Delete "{{ object.title }}"?</h3>
+    <p class="text-muted">This removes the job and every part requirement and proposal option under it. Any stock already ordered from it is kept — it just loses the traceability link back to this job. This can't be undone.</p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Yes, delete</button>
+        <a href="{% url 'inventory:job_detail' object.pk %}" class="btn btn-link">Cancel</a>
+    </form>
+{% endblock %}

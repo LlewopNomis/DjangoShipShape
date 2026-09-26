@@ -1,39 +1,57 @@
+from decimal import Decimal
+
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, ProtectedError, Q, Sum
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView
 
 from .forms import (
+    CatalogSourceForm,
     InventoryItemForm,
     ItemCategoryEditForm,
     ItemCategoryForm,
     ItemPhotoForm,
+    JobForm,
     LocationEditForm,
     LocationForm,
     LocationPhotoForm,
+    PartRequirementForm,
+    ProposalOptionForm,
+    ProposalOptionOrderForm,
     RepairCategoryForm,
     RepairConsumedItemForm,
     RepairForm,
     RepairPhotoForm,
     SpareForm,
     SparePhotoForm,
+    VendorForm,
     stock_item_label,
 )
 from .models import (
+    CatalogPart,
+    CatalogSection,
+    CatalogSource,
     InventoryItem,
     ItemCategory,
     ItemPhoto,
+    Job,
     Location,
     LocationPhoto,
+    PartRequirement,
+    ProposalOption,
     Repair,
     RepairCategory,
     RepairConsumedItem,
     RepairPhoto,
+    Rfq,
+    RfqLine,
     Spare,
     SparePhoto,
+    Vendor,
     format_quantity,
 )
 
@@ -55,6 +73,14 @@ SEARCH_SORT_FIELDS = {
     'unit_price': 'unit_price',
     'total': total_value_expr(),
     'condition': 'condition',
+}
+
+
+# Sortable columns on a catalog section's parts table.
+CATALOG_PART_SORT_FIELDS = {
+    'item_no': 'item_no',
+    'part_number': 'part_number',
+    'description': 'description',
 }
 
 
@@ -440,6 +466,9 @@ class InventoryItemDetailView(DetailView):
     template_name = 'inventory/item_detail.html'
     context_object_name = 'item'
 
+    def get_queryset(self):
+        return InventoryItem.objects.select_related('catalog_part__section__catalog')
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['photos'] = self.object.photos.all()
@@ -731,3 +760,438 @@ def repair_consumed_item_delete(request, pk):
             consumption.delete()
         messages.success(request, 'Consumption removed and quantity restored.')
     return redirect('inventory:repair_detail', pk=repair_pk)
+
+
+# --- Vendors -----------------------------------------------------------
+
+class VendorListView(ListView):
+    model = Vendor
+    template_name = 'inventory/vendor_list.html'
+    context_object_name = 'vendors'
+
+
+class VendorCreateView(CreateView):
+    model = Vendor
+    form_class = VendorForm
+    template_name = 'inventory/vendor_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:vendor_detail', args=[self.object.pk])
+
+
+class VendorDetailView(DetailView):
+    model = Vendor
+    template_name = 'inventory/vendor_detail.html'
+    context_object_name = 'vendor'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['purchase_history'] = (
+            self.object.proposal_options
+            .filter(status__in=[ProposalOption.STATUS_ORDERED, ProposalOption.STATUS_RECEIVED])
+            .select_related('requirement', 'requirement__job')
+            .order_by('-ordered_at')
+        )
+        return context
+
+
+class VendorUpdateView(UpdateView):
+    model = Vendor
+    form_class = VendorForm
+    template_name = 'inventory/vendor_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:vendor_detail', args=[self.object.pk])
+
+
+class VendorDeleteView(DeleteView):
+    model = Vendor
+    template_name = 'inventory/vendor_confirm_delete.html'
+    success_url = reverse_lazy('inventory:vendor_list')
+
+    def form_valid(self, form):
+        try:
+            return super().form_valid(form)
+        except ProtectedError:
+            messages.error(
+                self.request,
+                'Cannot delete this vendor: it still has purchase options recorded against it. '
+                'Reassign or remove those first.',
+            )
+            return redirect('inventory:vendor_detail', pk=self.object.pk)
+
+
+# --- Jobs, part requirements & proposal options -------------------------
+
+class JobListView(ListView):
+    model = Job
+    template_name = 'inventory/job_list.html'
+    context_object_name = 'jobs'
+
+    def get_queryset(self):
+        qs = Job.objects.select_related('location')
+        status = self.request.GET.get('status')
+        if status:
+            qs = qs.filter(status=status)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = Job.STATUS_CHOICES
+        context['selected_status'] = self.request.GET.get('status', '')
+        return context
+
+
+class JobCreateView(CreateView):
+    model = Job
+    form_class = JobForm
+    template_name = 'inventory/job_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:job_detail', args=[self.object.pk])
+
+
+class JobDetailView(DetailView):
+    model = Job
+    template_name = 'inventory/job_detail.html'
+    context_object_name = 'job'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        requirements = (
+            self.object.requirements
+            .select_related('category', 'unit', 'rfq_vendor', 'catalog_part__section__catalog')
+            .prefetch_related('options')
+        )
+        vendor_filter = self.request.GET.get('vendor', '')
+        if vendor_filter == 'none':
+            requirements = requirements.filter(rfq_vendor__isnull=True)
+        elif vendor_filter:
+            requirements = requirements.filter(rfq_vendor_id=vendor_filter)
+        context['requirements'] = requirements
+        context['requirement_form'] = PartRequirementForm()
+        context['vendor_filter'] = vendor_filter
+        context['assigned_vendors'] = Vendor.objects.filter(
+            rfq_requirements__job=self.object,
+        ).distinct().order_by('name')
+        context['all_vendors'] = Vendor.objects.order_by('name')
+        context['rfqs'] = self.object.rfqs.select_related('vendor')
+        return context
+
+
+class JobUpdateView(UpdateView):
+    model = Job
+    form_class = JobForm
+    template_name = 'inventory/job_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:job_detail', args=[self.object.pk])
+
+
+class JobDeleteView(DeleteView):
+    model = Job
+    template_name = 'inventory/job_confirm_delete.html'
+    success_url = reverse_lazy('inventory:job_list')
+
+
+def requirement_add(request, pk):
+    job = get_object_or_404(Job, pk=pk)
+    if request.method == 'POST':
+        form = PartRequirementForm(request.POST)
+        if form.is_valid():
+            requirement = form.save(commit=False)
+            requirement.job = job
+            requirement.save()
+            messages.success(request, f'"{requirement.name}" added to the job.')
+        else:
+            for field_errors in form.errors.values():
+                for error in field_errors:
+                    messages.error(request, error)
+    return redirect('inventory:job_detail', pk=job.pk)
+
+
+class RequirementDetailView(DetailView):
+    model = PartRequirement
+    template_name = 'inventory/requirement_detail.html'
+    context_object_name = 'requirement'
+
+    def get_queryset(self):
+        return PartRequirement.objects.select_related(
+            'job', 'category', 'unit', 'catalog_part', 'catalog_part__section', 'catalog_part__section__catalog',
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['options'] = self.object.options.select_related('vendor')
+        context['option_form'] = ProposalOptionForm()
+        return context
+
+
+class RequirementUpdateView(UpdateView):
+    model = PartRequirement
+    form_class = PartRequirementForm
+    template_name = 'inventory/requirement_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:requirement_detail', args=[self.object.pk])
+
+
+def requirement_delete(request, pk):
+    requirement = get_object_or_404(PartRequirement, pk=pk)
+    job_pk = requirement.job_id
+    if request.method == 'POST':
+        requirement.delete()
+        messages.success(request, 'Part requirement removed.')
+    return redirect('inventory:job_detail', pk=job_pk)
+
+
+def requirement_set_rfq_vendor(request, pk):
+    """Quick inline vendor tag on a job's requirement list — deliberately
+    separate from the full edit form so batch-tagging many requirements
+    ahead of an RFQ doesn't mean opening each one individually."""
+    requirement = get_object_or_404(PartRequirement, pk=pk)
+    if request.method == 'POST':
+        vendor_id = request.POST.get('rfq_vendor') or None
+        requirement.rfq_vendor_id = vendor_id
+        requirement.save(update_fields=['rfq_vendor'])
+    redirect_url = reverse('inventory:job_detail', args=[requirement.job_id])
+    keep_filter = request.POST.get('vendor_filter', '')
+    if keep_filter:
+        redirect_url += f'?vendor={keep_filter}'
+    return redirect(redirect_url)
+
+
+def option_add(request, pk):
+    requirement = get_object_or_404(PartRequirement, pk=pk)
+    if request.method == 'POST':
+        form = ProposalOptionForm(request.POST)
+        if form.is_valid():
+            option = form.save(commit=False)
+            option.requirement = requirement
+            option.save()
+            messages.success(request, 'Option added for comparison.')
+        else:
+            for field_errors in form.errors.values():
+                for error in field_errors:
+                    messages.error(request, error)
+    return redirect('inventory:requirement_detail', pk=requirement.pk)
+
+
+class OptionUpdateView(UpdateView):
+    model = ProposalOption
+    form_class = ProposalOptionForm
+    template_name = 'inventory/option_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:requirement_detail', args=[self.object.requirement_id])
+
+
+def option_delete(request, pk):
+    option = get_object_or_404(ProposalOption, pk=pk)
+    requirement_pk = option.requirement_id
+    if request.method == 'POST':
+        option.delete()
+        messages.success(request, 'Option removed.')
+    return redirect('inventory:requirement_detail', pk=requirement_pk)
+
+
+def option_order(request, pk):
+    option = get_object_or_404(ProposalOption.objects.select_related('requirement', 'requirement__job'), pk=pk)
+    job = option.requirement.job
+    if request.method == 'POST':
+        form = ProposalOptionOrderForm(request.POST, instance=option)
+        if form.is_valid():
+            with transaction.atomic():
+                ordered_option = form.save(commit=False)
+                ordered_option.status = ProposalOption.STATUS_ORDERED
+                ordered_option.ordered_at = timezone.now()
+                ordered_option.save()
+                location = form.cleaned_data['location']
+                requirement = ordered_option.requirement
+                part_number_note = f' — part #{requirement.part_number}' if requirement.part_number else ''
+                InventoryItem.objects.create(
+                    name=requirement.name,
+                    category=requirement.category,
+                    location=location,
+                    quantity=ordered_option.ordered_quantity,
+                    unit=requirement.unit,
+                    unit_price=(ordered_option.ordered_price / ordered_option.ordered_quantity).quantize(Decimal('0.01')),
+                    notes=f'Ordered from {ordered_option.vendor or "unlisted vendor"} — order #{ordered_option.order_number or "n/a"}'
+                          f'{part_number_note} (job: {job.title}).',
+                    sourced_from=ordered_option,
+                    catalog_part=requirement.catalog_part,
+                )
+            messages.success(request, f'Marked as ordered and added to stock in {location}.')
+            return redirect('inventory:requirement_detail', pk=requirement.pk)
+        return render(request, 'inventory/option_order_form.html', {'option': option, 'form': form, 'job': job})
+
+    default_location = Location.objects.filter(name__iexact='En Route').first()
+    form = ProposalOptionOrderForm(instance=option, initial={
+        'ordered_price': option.price,
+        'ordered_quantity': option.quantity_per_purchase,
+        'location': default_location.pk if default_location else None,
+    })
+    return render(request, 'inventory/option_order_form.html', {'option': option, 'form': form, 'job': job})
+
+
+# --- Parts catalogue -------------------------------------------------------
+
+class CatalogSourceListView(ListView):
+    model = CatalogSource
+    template_name = 'inventory/catalog_source_list.html'
+    context_object_name = 'catalogs'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        query = self.request.GET.get('q', '').strip()
+        context['query'] = query
+        if query:
+            context['part_results'] = (
+                CatalogPart.objects.select_related('section', 'section__catalog')
+                .filter(Q(part_number__icontains=query) | Q(description__icontains=query))[:100]
+            )
+        return context
+
+
+class CatalogSourceCreateView(CreateView):
+    model = CatalogSource
+    form_class = CatalogSourceForm
+    template_name = 'inventory/catalog_source_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:catalog_source_detail', args=[self.object.pk])
+
+
+class CatalogSourceDetailView(DetailView):
+    model = CatalogSource
+    template_name = 'inventory/catalog_source_detail.html'
+    context_object_name = 'catalog'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['sections'] = CatalogSection.objects.filter(catalog=self.object).order_by('path')
+        return context
+
+
+class CatalogSourceUpdateView(UpdateView):
+    model = CatalogSource
+    form_class = CatalogSourceForm
+    template_name = 'inventory/catalog_source_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:catalog_source_detail', args=[self.object.pk])
+
+
+class CatalogSourceDeleteView(DeleteView):
+    model = CatalogSource
+    template_name = 'inventory/catalog_source_confirm_delete.html'
+    success_url = reverse_lazy('inventory:catalog_source_list')
+
+
+class CatalogSectionDetailView(DetailView):
+    model = CatalogSection
+    template_name = 'inventory/catalog_section_detail.html'
+    context_object_name = 'section'
+
+    def get_queryset(self):
+        return CatalogSection.objects.select_related('catalog')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        sort = self.request.GET.get('sort', '')
+        context['parts'] = apply_sort(self.object.parts.all(), sort, CATALOG_PART_SORT_FIELDS, default='id')
+        context['sort'] = sort
+        context['ancestors'] = self.object.get_ancestors()
+        context['children'] = self.object.get_children()
+        return context
+
+
+# --- RFQs --------------------------------------------------------------
+
+def rfq_create(request, pk):
+    """Drafts an RFQ from the requirements currently matching a vendor filter
+    on the job page — 'All' isn't a valid choice here since mixing several
+    vendors' parts into one email wouldn't make sense."""
+    job = get_object_or_404(Job, pk=pk)
+    if request.method != 'POST':
+        return redirect('inventory:job_detail', pk=job.pk)
+
+    vendor_param = request.POST.get('vendor', '')
+    vendor = None
+    requirements = job.requirements.all()
+    if vendor_param == 'none':
+        requirements = requirements.filter(rfq_vendor__isnull=True)
+    elif vendor_param:
+        vendor = get_object_or_404(Vendor, pk=vendor_param)
+        requirements = requirements.filter(rfq_vendor=vendor)
+    else:
+        messages.error(request, 'Filter to a specific vendor (or "no vendor assigned") before drafting an RFQ.')
+        return redirect('inventory:job_detail', pk=job.pk)
+
+    if not requirements.exists():
+        messages.error(request, 'No part requirements match that filter.')
+        return redirect(f"{reverse('inventory:job_detail', args=[job.pk])}?vendor={vendor_param}")
+
+    with transaction.atomic():
+        rfq = Rfq.objects.create(job=job, vendor=vendor)
+        RfqLine.objects.bulk_create([RfqLine(rfq=rfq, requirement=r) for r in requirements])
+
+    return redirect('inventory:rfq_detail', pk=rfq.pk)
+
+
+class RfqListView(ListView):
+    model = Rfq
+    template_name = 'inventory/rfq_list.html'
+    context_object_name = 'rfqs'
+
+    def get_queryset(self):
+        return Rfq.objects.select_related('job', 'vendor')
+
+
+class RfqDetailView(DetailView):
+    model = Rfq
+    template_name = 'inventory/rfq_detail.html'
+    context_object_name = 'rfq'
+
+    def get_queryset(self):
+        return Rfq.objects.select_related('job', 'vendor')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['lines'] = self.object.lines.select_related('requirement', 'requirement__unit', 'requirement__category')
+        return context
+
+
+def rfq_mark_sent(request, pk):
+    rfq = get_object_or_404(Rfq, pk=pk)
+    if request.method == 'POST':
+        rfq.status = Rfq.STATUS_SENT
+        rfq.sent_at = timezone.now()
+        rfq.save(update_fields=['status', 'sent_at'])
+        messages.success(request, 'Marked as sent.')
+    return redirect('inventory:rfq_detail', pk=rfq.pk)
+
+
+def rfq_mark_draft(request, pk):
+    """Undoes 'mark as sent' — for correcting a mistaken click, or for an
+    RFQ that was marked sent but, on reflection, wasn't actually sent."""
+    rfq = get_object_or_404(Rfq, pk=pk)
+    if request.method == 'POST':
+        rfq.status = Rfq.STATUS_DRAFT
+        rfq.sent_at = None
+        rfq.save(update_fields=['status', 'sent_at'])
+        messages.success(request, 'Marked as draft.')
+    return redirect('inventory:rfq_detail', pk=rfq.pk)
+
+
+def rfq_delete(request, pk):
+    """Only ever deletes a still-draft RFQ — one that's been sent is a real
+    record of what went to a vendor and shouldn't disappear by accident."""
+    rfq = get_object_or_404(Rfq, pk=pk)
+    if request.method == 'POST':
+        if rfq.status != Rfq.STATUS_DRAFT:
+            messages.error(request, 'Only a draft RFQ can be deleted — mark it back to draft first.')
+            return redirect('inventory:rfq_detail', pk=rfq.pk)
+        rfq.delete()
+        messages.success(request, 'RFQ deleted.')
+    return redirect('inventory:rfq_list')

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load inventory_extras %}
+{% block title %}{{ requirement.name }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:job_list' %}">Jobs</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'inventory:job_detail' requirement.job.pk %}">{{ requirement.job.title }}</a></li>
+            <li class="breadcrumb-item active">{{ requirement.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ requirement.name }}</h3>
+            <p class="text-muted mb-0">
+                {% if requirement.part_number %}#{{ requirement.part_number }} · {% endif %}
+                {% if requirement.category %}{{ requirement.category }} · {% endif %}
+                need {{ requirement.quantity_needed|qty }}{% if requirement.unit %} {{ requirement.unit }}{% endif %},
+                ordered {{ requirement.ordered_quantity|qty }}
+                {% if requirement.is_fulfilled %}<span class="badge bg-success ms-1">Fulfilled</span>{% endif %}
+            </p>
+            {% if requirement.catalog_part %}
+                <p class="mb-0">
+                    Catalog:
+                    <a href="{% url 'inventory:catalog_section_detail' requirement.catalog_part.section_id %}#part-{{ requirement.catalog_part.pk }}">
+                        {{ requirement.catalog_part.part_number }}{% if requirement.catalog_part.description %} — {{ requirement.catalog_part.description }}{% endif %}
+                    </a>
+                    <span class="text-muted small">({% if requirement.catalog_part.item_no %}No. {{ requirement.catalog_part.item_no }}, {% endif %}{{ requirement.catalog_part.section.catalog.name }}, {{ requirement.catalog_part.section.name }})</span>
+                </p>
+            {% endif %}
+        </div>
+        <div class="btn-group">
+            <a href="{% url 'inventory:requirement_edit' requirement.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            <form method="post" action="{% url 'inventory:requirement_delete' requirement.pk %}" onsubmit="return confirm('Remove this requirement and its options?');" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+            </form>
+        </div>
+    </div>
+
+    {% if requirement.notes %}<p>{{ requirement.notes|linebreaks }}</p>{% endif %}
+
+    <h6>Options</h6>
+    {% if options %}
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr><th>Vendor</th><th>Link</th><th>Price</th><th>Pack</th><th>Unit price</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+            {% for option in options %}
+                <tr class="{% if option.status == 'ordered' or option.status == 'received' %}table-success{% elif option.status == 'cancelled' %}table-secondary{% endif %}">
+                    <td>{% if option.vendor %}<a href="{% url 'inventory:vendor_detail' option.vendor.pk %}">{{ option.vendor }}</a>{% else %}—{% endif %}</td>
+                    <td>{% if option.url %}<a href="{{ option.url }}" target="_blank" rel="noopener">link</a>{% else %}—{% endif %}</td>
+                    <td>${{ option.price|floatformat:"2g" }}</td>
+                    <td>{{ option.quantity_per_purchase|qty }}</td>
+                    <td>${{ option.unit_price|floatformat:"2g" }}</td>
+                    <td>{{ option.get_status_display }}{% if option.order_number %} ({{ option.order_number }}){% endif %}</td>
+                    <td class="text-end text-nowrap">
+                        {% if option.status == 'proposed' %}
+                            <a href="{% url 'inventory:option_order' option.pk %}" class="btn btn-sm btn-primary">Order</a>
+                        {% endif %}
+                        <a href="{% url 'inventory:option_edit' option.pk %}" class="btn btn-sm btn-link">edit</a>
+                        <form method="post" action="{% url 'inventory:option_delete' option.pk %}" onsubmit="return confirm('Remove this option?');" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-link text-danger p-0">remove</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted small mb-2">No options captured yet — add one below.</p>
+    {% endif %}
+
+    <h6>Add an option</h6>
+    <form method="post" action="{% url 'inventory:option_add' requirement.pk %}" class="row g-2 align-items-start mb-4">
+        {% csrf_token %}
+        <div class="col-auto">
+            <label class="form-label small mb-1" for="{{ option_form.vendor.id_for_label }}">{{ option_form.vendor.label }}</label>
+            {{ option_form.vendor }}
+        </div>
+        <div class="col-auto" style="min-width: 220px;">
+            <label class="form-label small mb-1" for="{{ option_form.url.id_for_label }}">{{ option_form.url.label }}</label>
+            {{ option_form.url }}
+        </div>
+        <div class="col-auto" style="max-width: 110px;">
+            <label class="form-label small mb-1" for="{{ option_form.price.id_for_label }}">{{ option_form.price.label }}</label>
+            {{ option_form.price }}
+        </div>
+        <div class="col-auto" style="max-width: 130px;">
+            <label class="form-label small mb-1" for="{{ option_form.quantity_per_purchase.id_for_label }}">Qty per purchase</label>
+            {{ option_form.quantity_per_purchase }}
+        </div>
+        <div class="col-auto">
+            <label class="form-label small mb-1" for="{{ option_form.notes.id_for_label }}">{{ option_form.notes.label }}</label>
+            {{ option_form.notes }}
+        </div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add option</button></div>
+    </form>
+{% endblock %}

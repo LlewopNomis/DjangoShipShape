@@ -100,3 +100,30 @@ def tree_list(nodes, detail_url_name, branch_icon='📁', leaf_icon='📦', defa
         'max_depth': max_depth,
         'count_param': count_param,
     }
+
+
+@register.inclusion_tag('inventory/_catalog_part_field.html')
+def catalog_part_field(field):
+    """Renders a CatalogPartChoiceField (hidden ModelChoiceField widget) as a
+    type-to-search box instead of a giant <select> — with 2000+ catalog parts,
+    scrolling a dropdown to find one is unworkable, and matching by pasting a
+    bare part number (with no description/section attached) needs to work too,
+    since that's what's actually printed on the requirement/item you're filling
+    in from. See _catalog_part_field.html for the matching logic."""
+    model_field = field.field
+    options = [
+        {'id': obj.pk, 'label': model_field.label_from_instance(obj), 'part_number': obj.part_number}
+        for obj in model_field.queryset
+    ]
+    selected_label = ''
+    selected_id = field.value()
+    if selected_id:
+        selected = next((o for o in options if str(o['id']) == str(selected_id)), None)
+        if selected:
+            selected_label = selected['label']
+    return {
+        'field': field,
+        'options': options,
+        'selected_label': selected_label,
+        'data_id': f'{field.html_name}-catalog-part-data',
+    }

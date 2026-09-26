@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}RFQs — ShipShape{% endblock %}
+{% block content %}
+    <h3 class="mb-3">RFQs</h3>
+
+    {% if rfqs %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead><tr><th>Job</th><th>Vendor</th><th>Parts</th><th>Status</th><th>Created</th><th>Sent</th><th></th></tr></thead>
+                <tbody>
+                {% for rfq in rfqs %}
+                    <tr>
+                        <td><a href="{% url 'inventory:rfq_detail' rfq.pk %}">{{ rfq.job.title }}</a></td>
+                        <td>{{ rfq.vendor|default:"No vendor" }}</td>
+                        <td>{{ rfq.lines.count }}</td>
+                        <td>{% if rfq.status == 'sent' %}<span class="badge bg-success">Sent</span>{% else %}<span class="badge bg-secondary">Draft</span>{% endif %}</td>
+                        <td>{{ rfq.created_at|date:"Y-m-d" }}</td>
+                        <td>{{ rfq.sent_at|date:"Y-m-d"|default:"—" }}</td>
+                        <td class="text-end">
+                            {% if rfq.status == 'draft' %}
+                                <form method="post" action="{% url 'inventory:rfq_delete' rfq.pk %}" onsubmit="return confirm('Delete this draft RFQ?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Delete draft RFQ">🗑️</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-muted">No RFQs yet — draft one from a job's part requirements list.</p>
+    {% endif %}
+{% endblock %}

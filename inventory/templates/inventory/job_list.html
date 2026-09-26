@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load inventory_extras %}
+{% block title %}Jobs — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Jobs</h3>
+        <div class="btn-group">
+            <a href="{% url 'inventory:vendor_list' %}" class="btn btn-sm btn-outline-secondary">Vendors</a>
+            <a href="{% url 'inventory:rfq_list' %}" class="btn btn-sm btn-outline-secondary">RFQs</a>
+            <a href="{% url 'inventory:job_add' %}" class="btn btn-sm btn-primary">+ New job</a>
+        </div>
+    </div>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <select name="status" class="form-select">
+                <option value="">All statuses</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-outline-secondary w-100">Filter</button>
+        </div>
+    </form>
+
+    {% if jobs %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead><tr><th>Title</th><th>Status</th><th>Location</th><th>Target date</th><th>Ordered cost</th></tr></thead>
+                <tbody>
+                {% for job in jobs %}
+                    <tr>
+                        <td><a href="{% url 'inventory:job_detail' job.pk %}">{{ job.title }}</a></td>
+                        <td>{{ job.get_status_display }}</td>
+                        <td>{{ job.location|default:"—" }}</td>
+                        <td>{{ job.target_date|default:"—" }}</td>
+                        <td>${{ job.ordered_cost|floatformat:"2g" }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-muted">No jobs yet. <a href="{% url 'inventory:job_add' %}">Start your first one</a>.</p>
+    {% endif %}
+{% endblock %}

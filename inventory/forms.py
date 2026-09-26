@@ -1,11 +1,16 @@
 from django import forms
 
 from .models import (
+    CatalogPart,
+    CatalogSource,
     InventoryItem,
     ItemCategory,
     ItemPhoto,
+    Job,
     Location,
     LocationPhoto,
+    PartRequirement,
+    ProposalOption,
     Repair,
     RepairCategory,
     RepairConsumedItem,
@@ -13,6 +18,7 @@ from .models import (
     Spare,
     SparePhoto,
     Unit,
+    Vendor,
     format_quantity,
 )
 
@@ -81,6 +87,20 @@ class ItemCategoryEditForm(BootstrapFormMixin, forms.ModelForm):
         fields = ['name', 'description']
 
 
+class CatalogPartChoiceField(forms.ModelChoiceField):
+    """Shows the part number, description and which fig/catalog it comes
+    from, right in the dropdown — a catalog part number alone isn't enough
+    to place it."""
+
+    def label_from_instance(self, obj):
+        label = f'{obj.part_number} — {obj.description}' if obj.description else obj.part_number
+        return f'{label} ({obj.section.catalog.name}, {obj.section.name})'
+
+
+def catalog_part_queryset():
+    return CatalogPart.objects.select_related('section', 'section__catalog').order_by('part_number')
+
+
 class InventoryItemForm(BootstrapFormMixin, forms.ModelForm):
     category = IndentedModelChoiceField(
         queryset=ItemCategory.objects.all(), required=False,
@@ -89,10 +109,11 @@ class InventoryItemForm(BootstrapFormMixin, forms.ModelForm):
         queryset=Location.objects.all(), required=True,
     )
     unit = forms.ModelChoiceField(queryset=Unit.objects.all(), required=False)
+    catalog_part = CatalogPartChoiceField(queryset=catalog_part_queryset(), required=False, widget=forms.HiddenInput())
 
     class Meta:
         model = InventoryItem
-        fields = ['name', 'category', 'location', 'quantity', 'unit', 'unit_price', 'condition', 'notes']
+        fields = ['name', 'category', 'location', 'quantity', 'unit', 'unit_price', 'condition', 'catalog_part', 'notes']
 
 
 class SpareForm(BootstrapFormMixin, forms.ModelForm):
@@ -195,3 +216,71 @@ class RepairConsumedItemForm(BootstrapFormMixin, forms.ModelForm):
                 f'cannot consume {format_quantity(quantity)}.'
             )
         return cleaned_data
+
+
+class VendorForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Vendor
+        fields = ['name', 'contact_name', 'phone', 'email', 'address', 'url', 'notes']
+
+
+class JobForm(BootstrapFormMixin, forms.ModelForm):
+    location = IndentedModelChoiceField(queryset=Location.objects.all(), required=False)
+
+    class Meta:
+        model = Job
+        fields = ['title', 'description', 'location', 'status', 'target_date']
+        widgets = {'target_date': forms.DateInput(attrs={'type': 'date'})}
+
+
+class PartRequirementForm(BootstrapFormMixin, forms.ModelForm):
+    category = IndentedModelChoiceField(queryset=ItemCategory.objects.all(), required=False)
+    unit = forms.ModelChoiceField(queryset=Unit.objects.all(), required=False)
+    catalog_part = CatalogPartChoiceField(queryset=catalog_part_queryset(), required=False, widget=forms.HiddenInput())
+    rfq_vendor = forms.ModelChoiceField(
+        queryset=Vendor.objects.all(), required=False, label='RFQ vendor',
+        help_text='Vendor to request a quote from for this part.',
+    )
+
+    class Meta:
+        model = PartRequirement
+        fields = ['name', 'part_number', 'category', 'quantity_needed', 'unit', 'catalog_part', 'rfq_vendor', 'notes']
+
+
+class ProposalOptionForm(BootstrapFormMixin, forms.ModelForm):
+    vendor = forms.ModelChoiceField(queryset=Vendor.objects.all(), required=False)
+    url = forms.URLField(required=False, label='URL')
+
+    class Meta:
+        model = ProposalOption
+        fields = ['vendor', 'url', 'price', 'quantity_per_purchase', 'notes']
+
+
+class ProposalOptionOrderForm(BootstrapFormMixin, forms.ModelForm):
+    """Confirms a proposal option as ordered: order number plus a price/quantity
+    that can be adjusted from what was originally listed, and the location the
+    stock should land in (typically wherever 'ordered but not yet arrived' stock
+    is kept, e.g. an 'En Route' location)."""
+
+    location = IndentedModelChoiceField(queryset=Location.objects.all(), required=True)
+
+    class Meta:
+        model = ProposalOption
+        fields = ['order_number', 'ordered_price', 'ordered_quantity']
+
+    def clean(self):
+        cleaned_data = super().clean()
+        price = cleaned_data.get('ordered_price')
+        quantity = cleaned_data.get('ordered_quantity')
+        if price is not None and price < 0:
+            self.add_error('ordered_price', 'Price cannot be negative.')
+        if quantity is not None and quantity <= 0:
+            self.add_error('ordered_quantity', 'Quantity must be greater than zero.')
+        return cleaned_data
+
+
+class CatalogSourceForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = CatalogSource
+        fields = ['name', 'manufacturer', 'model_code', 'file', 'notes']
+        widgets = {'file': forms.ClearableFileInput(attrs={'accept': '.pdf'})}

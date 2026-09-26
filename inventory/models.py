@@ -1,4 +1,5 @@
 from decimal import Decimal
+from urllib.parse import quote
 
 from django.core.validators import FileExtensionValidator, MinValueValidator
 from django.db import models
@@ -125,6 +126,16 @@ class InventoryItem(models.Model):
         help_text='Price per unit, in $, if known. Useful for insurance/valuation.',
     )
     notes = models.TextField(blank=True)
+    sourced_from = models.ForeignKey(
+        'ProposalOption', on_delete=models.SET_NULL, related_name='inventory_items',
+        null=True, blank=True,
+        help_text='The purchase option this stock was ordered from, if it came in through the job/purchasing flow.',
+    )
+    catalog_part = models.ForeignKey(
+        'CatalogPart', on_delete=models.SET_NULL, related_name='inventory_items',
+        null=True, blank=True,
+        help_text='The parts-catalog entry this item matches, if you have one on file.',
+    )
     date_added = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
 
@@ -358,3 +369,369 @@ class RepairConsumedItem(models.Model):
         if self.item.unit_price is None:
             return None
         return (self.quantity * self.item.unit_price).quantize(Decimal('0.01'))
+
+
+class Vendor(models.Model):
+    """A supplier parts are bought from — kept separately from a one-off
+    ProposalOption link so contact details and purchase history build up
+    across jobs, not just within one."""
+
+    name = models.CharField(max_length=200, unique=True)
+    contact_name = models.CharField(max_length=200, blank=True)
+    phone = models.CharField(max_length=50, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.TextField(blank=True)
+    url = models.URLField(blank=True, verbose_name='Website')
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Job(models.Model):
+    """A piece of work (e.g. 'Engine hose replacement') that parts are
+    bought for. Holds a checklist of PartRequirements, each compared across
+    ProposalOptions before one is ordered."""
+
+    STATUS_PLANNING = 'planning'
+    STATUS_ORDERING = 'ordering'
+    STATUS_COMPLETE = 'complete'
+    STATUS_CHOICES = [
+        (STATUS_PLANNING, 'Planning'),
+        (STATUS_ORDERING, 'Ordering'),
+        (STATUS_COMPLETE, 'Complete'),
+    ]
+
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    location = models.ForeignKey(
+        Location, on_delete=models.SET_NULL, related_name='jobs',
+        null=True, blank=True,
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PLANNING)
+    target_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def ordered_cost(self):
+        """Running total of what's actually been committed to (ordered/received
+        options), computed live so it can't drift from the underlying rows.
+        ordered_price is already the total paid for ordered_quantity (mirrors
+        how price/quantity_per_purchase work on the option itself) — so this
+        is a plain sum, not price x quantity."""
+        total = ProposalOption.objects.filter(
+            requirement__job=self,
+            status__in=[ProposalOption.STATUS_ORDERED, ProposalOption.STATUS_RECEIVED],
+        ).aggregate(total=models.Sum('ordered_price'))['total']
+        return total or Decimal('0.00')
+
+
+class PartRequirement(models.Model):
+    """One actual part needed for a job (e.g. 'Upper radiator hose, qty 1')
+    — the checklist row that ProposalOptions get compared against."""
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name='requirements')
+    name = models.CharField(max_length=200)
+    part_number = models.CharField(
+        max_length=100, blank=True,
+        help_text='OEM/manufacturer part number, if known — makes it much easier to '
+                   'match listings across vendors.',
+    )
+    category = models.ForeignKey(
+        ItemCategory, on_delete=models.SET_NULL, related_name='part_requirements',
+        null=True, blank=True,
+    )
+    quantity_needed = models.DecimalField(
+        max_digits=10, decimal_places=2, default=1, validators=[MinValueValidator(0)],
+    )
+    unit = models.ForeignKey(
+        Unit, on_delete=models.PROTECT, related_name='part_requirements',
+        null=True, blank=True,
+    )
+    catalog_part = models.ForeignKey(
+        'CatalogPart', on_delete=models.SET_NULL, related_name='part_requirements',
+        null=True, blank=True,
+        help_text='The parts-catalog entry this requirement matches, if you have one on file.',
+    )
+    rfq_vendor = models.ForeignKey(
+        Vendor, on_delete=models.SET_NULL, related_name='rfq_requirements',
+        null=True, blank=True,
+        help_text='Vendor to request a quote from for this part — separate from ProposalOption.vendor, '
+                   'which is for a specific priced listing once you have one.',
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def ordered_quantity(self):
+        total = self.options.filter(
+            status__in=[ProposalOption.STATUS_ORDERED, ProposalOption.STATUS_RECEIVED],
+        ).aggregate(total=models.Sum('ordered_quantity'))['total']
+        return total or Decimal('0')
+
+    @property
+    def is_fulfilled(self):
+        return self.ordered_quantity >= self.quantity_needed
+
+    @property
+    def best_option(self):
+        """The cheapest still-proposed option by unit price, for an at-a-glance
+        'current best value' indicator while still comparing."""
+        candidates = [o for o in self.options.all() if o.status == ProposalOption.STATUS_PROPOSED and o.unit_price is not None]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda o: o.unit_price)
+
+
+class ProposalOption(models.Model):
+    """One candidate purchase for a PartRequirement — a URL, a price and
+    (optionally) a vendor — so several can be compared before ordering.
+    Ordering one stamps the order number/confirmed price here and creates
+    the actual InventoryItem it becomes (see views.option_order)."""
+
+    STATUS_PROPOSED = 'proposed'
+    STATUS_ORDERED = 'ordered'
+    STATUS_RECEIVED = 'received'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_PROPOSED, 'Proposed'),
+        (STATUS_ORDERED, 'Ordered'),
+        (STATUS_RECEIVED, 'Received'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
+    requirement = models.ForeignKey(PartRequirement, on_delete=models.CASCADE, related_name='options')
+    vendor = models.ForeignKey(
+        Vendor, on_delete=models.PROTECT, related_name='proposal_options',
+        null=True, blank=True,
+    )
+    url = models.URLField(blank=True)
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        help_text='Listed price for quantity_per_purchase, in $.',
+    )
+    quantity_per_purchase = models.DecimalField(
+        max_digits=10, decimal_places=2, default=1, validators=[MinValueValidator(Decimal('0.01'))],
+        help_text="How many units that price buys, e.g. 5 for a 'pack of 5' listing — "
+                   'makes differently-sized listings comparable by unit price.',
+    )
+    notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PROPOSED)
+    order_number = models.CharField(max_length=100, blank=True)
+    ordered_price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Total price actually paid for ordered_quantity, in $ — prefilled from the '
+                   'listed price but editable if it changed.',
+    )
+    ordered_quantity = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='How many units were actually ordered for ordered_price.',
+    )
+    ordered_at = models.DateTimeField(null=True, blank=True)
+    date_found = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['price']
+
+    def __str__(self):
+        return f'{self.requirement.name} — {self.vendor or "unlisted vendor"} (${self.price})'
+
+    @property
+    def unit_price(self):
+        if not self.quantity_per_purchase:
+            return None
+        return (self.price / self.quantity_per_purchase).quantize(Decimal('0.01'))
+
+    @property
+    def total_ordered_cost(self):
+        """ordered_price is already the total paid for ordered_quantity (see
+        its help_text) — not a per-unit price, so no multiplication here."""
+        if self.ordered_price is None:
+            return None
+        return self.ordered_price.quantize(Decimal('0.01'))
+
+
+validate_pdf_extension = FileExtensionValidator(allowed_extensions=['pdf'])
+
+
+def catalog_source_path(instance, filename):
+    return f'catalogs/{filename}'
+
+
+class CatalogSource(models.Model):
+    """A single manufacturer/vendor parts manual (e.g. 'Yanmar 4JH3E') —
+    holds the source PDF itself, so a catalog part can link straight back
+    into the manual at the right page instead of duplicating its diagrams."""
+
+    name = models.CharField(max_length=200, unique=True)
+    manufacturer = models.CharField(max_length=200, blank=True)
+    model_code = models.CharField(
+        max_length=100, blank=True,
+        help_text='Engine/equipment model this catalog covers, e.g. 4JH3E.',
+    )
+    file = models.FileField(upload_to=catalog_source_path, validators=[validate_pdf_extension])
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class CatalogSection(MP_Node):
+    """One node in a catalog's own structure — typically a 'Fig.' exploded
+    assembly diagram. A tree so a catalog with deeper grouping (system >
+    sub-assembly > fig) fits the same model as a flat one, like 4JH3E,
+    where every fig sits at the top level."""
+
+    catalog = models.ForeignKey(CatalogSource, on_delete=models.CASCADE, related_name='sections')
+    name = models.CharField(max_length=200, help_text="e.g. 'Fig.27 COOLING FRESH WATER PUMP'.")
+    fig_number = models.CharField(
+        max_length=20, blank=True,
+        help_text="The catalog's own figure/section number, if it has one — used to order sections.",
+    )
+    page_number = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Page in the source PDF this section starts on, for the "open manual page" link.',
+    )
+    description = models.TextField(blank=True)
+
+    node_order_by = ['fig_number', 'name']
+
+    class Meta:
+        verbose_name = 'catalog section'
+        verbose_name_plural = 'catalog sections'
+
+    def __str__(self):
+        return self.name
+
+
+class CatalogPart(models.Model):
+    """One BOM line within a CatalogSection — an actual catalog part number.
+    Keeps the manual's own item/level bookkeeping for reference, since it's
+    printed on the diagram and useful when cross-checking by eye."""
+
+    section = models.ForeignKey(CatalogSection, on_delete=models.CASCADE, related_name='parts')
+    item_no = models.CharField(
+        max_length=20, blank=True,
+        help_text="The manual's own item number within this section, e.g. '12-1'.",
+    )
+    bom_level = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="The manual's own BOM indent level (its 'Lev.' column) — unrelated to the "
+                   'catalog section tree depth above.',
+    )
+    part_number = models.CharField(max_length=100, db_index=True)
+    description = models.CharField(max_length=300, blank=True)
+    quantity_note = models.CharField(
+        max_length=200, blank=True,
+        help_text='Quantity per engine/equipment variant, as printed in the manual (free text, '
+                   'since variant columns differ by catalog).',
+    )
+    remarks = models.CharField(
+        max_length=100, blank=True,
+        help_text="The manual's own remarks/flag column (e.g. superseded, interchangeable).",
+    )
+
+    class Meta:
+        ordering = ['id']
+        verbose_name = 'catalog part'
+        verbose_name_plural = 'catalog parts'
+
+    def __str__(self):
+        return f'{self.part_number} — {self.description}' if self.description else self.part_number
+
+
+class Rfq(models.Model):
+    """A request-for-quote sent (or about to be sent) to one vendor for a
+    batch of a job's part requirements — separate from ProposalOption, which
+    only exists once a specific priced listing has been found. Vendor is
+    nullable: an RFQ can be drafted for requirements with no vendor assigned
+    yet, with the To: address left blank for you to fill in by hand."""
+
+    STATUS_DRAFT = 'draft'
+    STATUS_SENT = 'sent'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SENT, 'Sent'),
+    ]
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name='rfqs')
+    vendor = models.ForeignKey(
+        Vendor, on_delete=models.SET_NULL, related_name='rfqs',
+        null=True, blank=True,
+    )
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'RFQ'
+        verbose_name_plural = 'RFQs'
+
+    def __str__(self):
+        return f'RFQ for {self.job.title} — {self.vendor or "no vendor"} ({self.get_status_display()})'
+
+    @property
+    def mailto_url(self):
+        """A mailto: link with the vendor's email (if known), a subject, and a
+        plain-text parts table in the body — mailto bodies can't carry real
+        HTML, so this is padded into aligned columns instead. A few blank
+        lines are left at the top for you to write a covering paragraph
+        before the table."""
+        lines = list(self.lines.select_related('requirement', 'requirement__unit'))
+        name_width = max([len(line.requirement.name) for line in lines] + [len('Part')])
+        qty_strings = [
+            format_quantity(line.requirement.quantity_needed) + (f' {line.requirement.unit}' if line.requirement.unit else '')
+            for line in lines
+        ]
+        qty_width = max([len(q) for q in qty_strings] + [len('Qty')])
+
+        header = f'{"Part":<{name_width}}  {"Qty":<{qty_width}}  Part No.'
+        table_rows = [header, '-' * len(header)]
+        for line, qty in zip(lines, qty_strings):
+            table_rows.append(f'{line.requirement.name:<{name_width}}  {qty:<{qty_width}}  {line.requirement.part_number}')
+
+        body = '\n\n\n\n' + '\n'.join(table_rows) + '\n'
+        to = self.vendor.email if self.vendor and self.vendor.email else ''
+        subject = f'RFQ — {self.job.title}'
+        return (
+            f'mailto:{to}'
+            f'?subject={quote(subject)}'
+            f'&body={quote(body.replace(chr(10), chr(13) + chr(10)))}'
+        )
+
+
+class RfqLine(models.Model):
+    """One part requirement included in an Rfq's batch."""
+
+    rfq = models.ForeignKey(Rfq, on_delete=models.CASCADE, related_name='lines')
+    requirement = models.ForeignKey(PartRequirement, on_delete=models.CASCADE, related_name='rfq_lines')
+
+    class Meta:
+        ordering = ['id']
+        unique_together = [('rfq', 'requirement')]
+
+    def __str__(self):
+        return f'{self.requirement.name} on {self.rfq}'

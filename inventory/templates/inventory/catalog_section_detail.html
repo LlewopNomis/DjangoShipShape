@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% load inventory_extras %}
+{% block title %}{{ section.name }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:catalog_source_list' %}">Parts catalogue</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'inventory:catalog_source_detail' section.catalog_id %}">{{ section.catalog.name }}</a></li>
+            {% for a in ancestors %}
+                <li class="breadcrumb-item"><a href="{% url 'inventory:catalog_section_detail' a.pk %}">{{ a.name }}</a></li>
+            {% endfor %}
+            <li class="breadcrumb-item active">{{ section.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ section.name }}</h3>
+            {% if section.description %}<p class="text-muted mb-0">{{ section.description }}</p>{% endif %}
+        </div>
+        {% if section.catalog.file and section.page_number %}
+            <a href="{{ section.catalog.file.url }}#page={{ section.page_number }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">Open manual page {{ section.page_number }}</a>
+        {% endif %}
+    </div>
+
+    {% if children %}
+        <h6>Sub-sections</h6>
+        <div class="list-group mb-3">
+            {% for child in children %}
+                <a href="{% url 'inventory:catalog_section_detail' child.pk %}" class="list-group-item list-group-item-action">{{ child.name }}</a>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <h6>Parts</h6>
+    {% if parts %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>{% sort_header 'item_no' 'No.' %}</th>
+                        <th>{% sort_header 'part_number' 'Part number' %}</th>
+                        <th>{% sort_header 'description' 'Description' %}</th>
+                        <th>Qty</th><th>Remarks</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for part in parts %}
+                    <tr id="part-{{ part.pk }}">
+                        <td>{{ part.item_no }}</td>
+                        <td>{{ part.part_number }}</td>
+                        <td>{{ part.description }}</td>
+                        <td>{{ part.quantity_note }}</td>
+                        <td>{{ part.remarks }}</td>
+                        <td>
+                            {% if section.catalog.file and section.page_number %}
+                                <a href="{{ section.catalog.file.url }}#page={{ section.page_number }}" target="_blank" rel="noopener" class="small">open page</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-muted">No parts recorded in this section.</p>
+    {% endif %}
+    <script>
+        window.addEventListener('load', function () {
+            // Runs on 'load', after the browser's own fragment-scroll has already
+            // happened, so ours (centered, not just top-aligned) is what sticks.
+            if (!location.hash.startsWith('#part-')) return;
+            var row = document.querySelector(location.hash);
+            if (!row) return;
+            row.scrollIntoView({block: 'center'});
+            row.classList.add('catalog-part-highlight');
+            document.addEventListener('click', function clearHighlight() {
+                row.classList.remove('catalog-part-highlight');
+                document.removeEventListener('click', clearHighlight);
+            });
+        });
+    </script>
+{% endblock %}

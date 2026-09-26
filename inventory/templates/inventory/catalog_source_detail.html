@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load inventory_extras %}
+{% block title %}{{ catalog.name }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:catalog_source_list' %}">Parts catalogue</a></li>
+            <li class="breadcrumb-item active">{{ catalog.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ catalog.name }}</h3>
+            <p class="text-muted mb-0">
+                {{ catalog.manufacturer }}
+                {% if catalog.model_code %} · {{ catalog.model_code }}{% endif %}
+            </p>
+        </div>
+        <div class="btn-group">
+            {% if catalog.file %}<a href="{{ catalog.file.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">Open manual (PDF)</a>{% endif %}
+            <a href="{% url 'inventory:catalog_source_edit' catalog.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            <a href="{% url 'inventory:catalog_source_delete' catalog.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+        </div>
+    </div>
+
+    {% if catalog.notes %}<p>{{ catalog.notes|linebreaks }}</p>{% endif %}
+
+    <h6>Sections</h6>
+    {% if sections %}
+        {% tree_list sections 'inventory:catalog_section_detail' branch_icon='📘' leaf_icon='🔧' %}
+    {% else %}
+        <p class="text-muted">No sections yet — import this catalog or add sections in the admin.</p>
+    {% endif %}
+{% endblock %}

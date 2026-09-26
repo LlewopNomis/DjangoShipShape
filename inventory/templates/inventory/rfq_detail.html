@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load inventory_extras %}
+{% block title %}RFQ — {{ rfq.job.title }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb" class="no-print">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:rfq_list' %}">RFQs</a></li>
+            <li class="breadcrumb-item active">{{ rfq.job.title }} — {{ rfq.vendor|default:"No vendor" }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">RFQ — {{ rfq.job.title }}</h3>
+            <p class="text-muted mb-0">
+                {{ rfq.vendor|default:"No vendor assigned" }}
+                {% if rfq.vendor.email %} · {{ rfq.vendor.email }}{% endif %}
+                · {% if rfq.status == 'sent' %}<span class="badge bg-success">Sent</span> {{ rfq.sent_at|date:"Y-m-d H:i" }}{% else %}<span class="badge bg-secondary">Draft</span>{% endif %}
+                · created {{ rfq.created_at|date:"Y-m-d" }}
+            </p>
+        </div>
+        <div class="btn-group no-print">
+            <a href="{{ rfq.mailto_url }}" class="btn btn-sm btn-primary">Open email draft</a>
+            <a href="{% url 'inventory:job_detail' rfq.job_id %}" class="btn btn-sm btn-outline-secondary">Back to job</a>
+            {% if rfq.status == 'draft' %}
+                <form method="post" action="{% url 'inventory:rfq_mark_sent' rfq.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-success">Mark as sent</button>
+                </form>
+                <form method="post" action="{% url 'inventory:rfq_delete' rfq.pk %}" class="d-inline" onsubmit="return confirm('Delete this draft RFQ?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+            {% else %}
+                <form method="post" action="{% url 'inventory:rfq_mark_draft' rfq.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Mark as draft</button>
+                </form>
+            {% endif %}
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">Print</button>
+        </div>
+    </div>
+
+    {% if not rfq.vendor.email %}
+        <p class="text-muted small no-print">No vendor email on file — the draft opens with the To: field blank.</p>
+    {% endif %}
+
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr><th>Part</th><th>Part number</th><th>Qty</th><th>Category</th></tr>
+        </thead>
+        <tbody>
+        {% for line in lines %}
+            <tr>
+                <td>{{ line.requirement.name }}</td>
+                <td>{{ line.requirement.part_number }}</td>
+                <td>{{ line.requirement.quantity_needed|qty }}{% if line.requirement.unit %} {{ line.requirement.unit }}{% endif %}</td>
+                <td>{{ line.requirement.category|default:"—" }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

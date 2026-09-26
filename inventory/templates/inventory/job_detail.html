@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% load inventory_extras %}
+{% block title %}{{ job.title }} — ShipShape{% endblock %}
+{% block content %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:job_list' %}">Jobs</a></li>
+            <li class="breadcrumb-item active">{{ job.title }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">{{ job.title }}</h3>
+            <p class="text-muted mb-0">
+                {{ job.get_status_display }}
+                {% if job.location %} · <a href="{% url 'inventory:location_detail' job.location.pk %}">{{ job.location }}</a>{% endif %}
+                {% if job.target_date %} · due {{ job.target_date }}{% endif %}
+                · <strong>${{ job.ordered_cost|floatformat:"2g" }}</strong> ordered so far
+            </p>
+        </div>
+        <div class="btn-group">
+            <a href="{% url 'inventory:job_edit' job.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            <a href="{% url 'inventory:job_delete' job.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+        </div>
+    </div>
+
+    {% if job.description %}
+        <p>{{ job.description|linebreaks }}</p>
+    {% endif %}
+
+    <h6>Part requirements</h6>
+    <div class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <form method="get">
+                <label class="form-label small mb-1" for="vendor-filter">RFQ vendor</label>
+                <select id="vendor-filter" name="vendor" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="" {% if not vendor_filter %}selected{% endif %}>All</option>
+                    <option value="none" {% if vendor_filter == 'none' %}selected{% endif %}>No vendor assigned</option>
+                    {% for v in assigned_vendors %}
+                        <option value="{{ v.pk }}" {% if vendor_filter == v.pk|stringformat:"s" %}selected{% endif %}>{{ v.name }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+        {% if vendor_filter %}
+            <div class="col-auto">
+                <form method="post" action="{% url 'inventory:rfq_create' job.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="vendor" value="{{ vendor_filter }}">
+                    <button type="submit" class="btn btn-sm btn-primary">Draft RFQ email for this list</button>
+                </form>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if requirements %}
+        <div class="list-group mb-3">
+            {% for req in requirements %}
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <a href="{% url 'inventory:requirement_detail' req.pk %}" class="text-decoration-none text-reset flex-grow-1">
+                        <strong>{{ req.name }}</strong>
+                        {% if req.part_number %}<span class="text-muted small">#{{ req.part_number }}</span>{% endif %}
+                        {% if req.catalog_part %}{% with cp=req.catalog_part %}<span class="text-muted small">{% if cp.item_no %}No. {{ cp.item_no }}, {% endif %}{{ cp.section.catalog.name }}, {{ cp.section.name }}</span>{% endwith %}{% endif %}
+                        {% if req.category %}<span class="text-muted small"> · {{ req.category }}</span>{% endif %}
+                        <span class="text-muted small"> · need {{ req.quantity_needed|qty }}{% if req.unit %} {{ req.unit }}{% endif %}, ordered {{ req.ordered_quantity|qty }}</span>
+                        {% if req.is_fulfilled %}
+                            <span class="badge bg-success">Fulfilled</span>
+                        {% elif req.best_option %}
+                            <span class="badge bg-light text-dark border">best ${{ req.best_option.unit_price|floatformat:"2g" }}/unit</span>
+                        {% endif %}
+                    </a>
+                    <form method="post" action="{% url 'inventory:requirement_set_rfq_vendor' req.pk %}" class="ms-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="vendor_filter" value="{{ vendor_filter }}">
+                        <select name="rfq_vendor" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()" title="RFQ vendor for this part">
+                            <option value="">— no vendor —</option>
+                            {% for v in all_vendors %}
+                                <option value="{{ v.pk }}" {% if req.rfq_vendor_id == v.pk %}selected{% endif %}>{{ v.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">No part requirements match this filter.</p>
+    {% endif %}
+
+    {% if rfqs %}
+        <h6>RFQs</h6>
+        <div class="list-group mb-3">
+            {% for rfq in rfqs %}
+                <a href="{% url 'inventory:rfq_detail' rfq.pk %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <span>{{ rfq.vendor|default:"No vendor" }} · {{ rfq.lines.count }} part{{ rfq.lines.count|pluralize }}</span>
+                    <span>
+                        {% if rfq.status == 'sent' %}<span class="badge bg-success">Sent</span>{% else %}<span class="badge bg-secondary">Draft</span>{% endif %}
+                    </span>
+                </a>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <h6>Add a part requirement</h6>
+    <form method="post" action="{% url 'inventory:requirement_add' job.pk %}" class="row g-2 align-items-end mb-4">
+        {% csrf_token %}
+        <div class="col-auto">
+            <label class="form-label small mb-1" for="{{ requirement_form.name.id_for_label }}">{{ requirement_form.name.label }}</label>
+            {{ requirement_form.name }}
+        </div>
+        <div class="col-auto">
+            <label class="form-label small mb-1" for="{{ requirement_form.part_number.id_for_label }}">{{ requirement_form.part_number.label }}</label>
+            {{ requirement_form.part_number }}
+        </div>
+        <div class="col-auto">
+            <label class="form-label small mb-1" for="{{ requirement_form.category.id_for_label }}">{{ requirement_form.category.label }}</label>
+            {{ requirement_form.category }}
+        </div>
+        <div class="col-auto" style="max-width: 100px;">
+            <label class="form-label small mb-1" for="{{ requirement_form.quantity_needed.id_for_label }}">Qty needed</label>
+            {{ requirement_form.quantity_needed }}
+        </div>
+        <div class="col-auto" style="max-width: 110px;">
+            <label class="form-label small mb-1" for="{{ requirement_form.unit.id_for_label }}">{{ requirement_form.unit.label }}</label>
+            {{ requirement_form.unit }}
+        </div>
+        <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Add requirement</button></div>
+    </form>
+{% endblock %}

@@ -1,0 +1,52 @@
+<div class="mb-3">
+    <label class="form-label" for="{{ field.id_for_label }}_search">{{ field.label }}</label>
+    <input type="text" id="{{ field.id_for_label }}_search" class="form-control"
+           list="{{ field.id_for_label }}_options" autocomplete="off"
+           placeholder="Type or paste a part number..."
+           value="{{ selected_label }}">
+    <datalist id="{{ field.id_for_label }}_options">
+        {% for opt in options %}<option value="{{ opt.label }}">{% endfor %}
+    </datalist>
+    {{ field }}
+    <div class="form-text">Type or paste a part number, or a bit of the description — pick a suggestion, or leave it matched automatically if only one part has that number.</div>
+    {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+</div>
+{{ options|json_script:data_id }}
+<script>
+    (function () {
+        var data = JSON.parse(document.getElementById('{{ data_id }}').textContent);
+        var labelToId = {};
+        var partNumberToMatches = {};
+        data.forEach(function (opt) {
+            labelToId[opt.label] = opt.id;
+            (partNumberToMatches[opt.part_number] = partNumberToMatches[opt.part_number] || []).push(opt);
+        });
+        var search = document.getElementById('{{ field.id_for_label }}_search');
+        var hidden = document.getElementById('{{ field.id_for_label }}');
+
+        function resolve() {
+            var value = search.value.trim();
+            if (!value) {
+                hidden.value = '';
+                return;
+            }
+            if (labelToId[value] !== undefined) {
+                hidden.value = labelToId[value];
+                return;
+            }
+            var matches = partNumberToMatches[value];
+            if (matches && matches.length === 1) {
+                hidden.value = matches[0].id;
+                search.value = matches[0].label;
+                return;
+            }
+            // Ambiguous (same part number in more than one section) or no match —
+            // leave unresolved rather than guessing; the datalist suggestions
+            // (which include the section) are how they disambiguate.
+            hidden.value = '';
+        }
+
+        search.addEventListener('input', resolve);
+        search.addEventListener('blur', resolve);
+    })();
+</script>

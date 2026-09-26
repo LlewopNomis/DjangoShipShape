@@ -11,6 +11,15 @@
                 {% if item.category %} · <a href="{% url 'inventory:category_detail' item.category.pk %}">{{ item.category }}</a>{% endif %}
                 · <a href="{% url 'inventory:location_detail' item.location.pk %}">{{ item.location }}</a>
             </p>
+            {% if item.catalog_part %}
+                <p class="mb-0">
+                    Catalog:
+                    <a href="{% url 'inventory:catalog_section_detail' item.catalog_part.section_id %}#part-{{ item.catalog_part.pk }}">
+                        {{ item.catalog_part.part_number }}{% if item.catalog_part.description %} — {{ item.catalog_part.description }}{% endif %}
+                    </a>
+                    <span class="text-muted small">({% if item.catalog_part.item_no %}No. {{ item.catalog_part.item_no }}, {% endif %}{{ item.catalog_part.section.catalog.name }}, {{ item.catalog_part.section.name }})</span>
+                </p>
+            {% endif %}
         </div>
         <div class="btn-group">
             <a href="{% url 'inventory:item_edit' item.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>

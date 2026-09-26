@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Order — ShipShape{% endblock %}
+{% block content %}
+    <h3>Order "{{ option.requirement.name }}"</h3>
+    <p class="text-muted">
+        From {{ option.vendor|default:"an unlisted vendor" }} · listed ${{ option.price|floatformat:"2g" }}
+        for {{ option.quantity_per_purchase }}{% if option.requirement.unit %} {{ option.requirement.unit }}{% endif %}.
+        Confirm the order details below — the price/quantity can be adjusted if it differs from the listing.
+    </p>
+    <form method="post" class="mt-3" style="max-width: 480px;">
+        {% csrf_token %}
+        {% for field in form %}
+            <div class="mb-3">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">Confirm order</button>
+        <a href="{% url 'inventory:requirement_detail' option.requirement_id %}" class="btn btn-link">Cancel</a>
+    </form>
+{% endblock %}

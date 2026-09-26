@@ -30,10 +30,17 @@
         .sort-header:hover { color: #0d6efd; }
         .sort-icon { display: inline-flex; align-items: center; color: #0d6efd; }
         .sort-icon-desc svg { transform: scaleY(-1); }
+        @media print {
+            .no-print { display: none !important; }
+        }
+        /* Bootstrap's table cells paint their own background from --bs-table-bg
+           (inherited down to each <td>), which sits on top of and hides a plain
+           background-color set directly on the <tr> — so set the variable instead. */
+        .catalog-part-highlight { --bs-table-bg: #fff3cd; }
     </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 no-print">
     <div class="container">
         <a class="navbar-brand" href="{% url 'inventory:home' %}">⚓ ShipShape</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
@@ -45,12 +52,18 @@
             {% nav_is_active 'location' as nav_locations %}
             {% nav_is_active 'category' as nav_categories %}
             {% nav_is_active 'repair' as nav_repairs %}
+            {% nav_is_active 'job' 'requirement' 'option' 'rfq' as nav_jobs %}
+            {% nav_is_active 'vendor' as nav_vendors %}
+            {% nav_is_active 'catalog' as nav_catalog %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link{% if nav_inventory %} active{% endif %}" {% if nav_inventory %}aria-current="page"{% endif %} href="{% url 'inventory:item_list' %}">Inventory</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_search %} active{% endif %}" {% if nav_search %}aria-current="page"{% endif %} href="{% url 'inventory:search' %}">Search</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_locations %} active{% endif %}" {% if nav_locations %}aria-current="page"{% endif %} href="{% url 'inventory:location_list' %}">Locations</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_categories %} active{% endif %}" {% if nav_categories %}aria-current="page"{% endif %} href="{% url 'inventory:category_list' %}">Categories</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_repairs %} active{% endif %}" {% if nav_repairs %}aria-current="page"{% endif %} href="{% url 'inventory:repair_list' %}">Repair log</a></li>
+                <li class="nav-item"><a class="nav-link{% if nav_jobs %} active{% endif %}" {% if nav_jobs %}aria-current="page"{% endif %} href="{% url 'inventory:job_list' %}">Jobs</a></li>
+                <li class="nav-item"><a class="nav-link{% if nav_vendors %} active{% endif %}" {% if nav_vendors %}aria-current="page"{% endif %} href="{% url 'inventory:vendor_list' %}">Vendors</a></li>
+                <li class="nav-item"><a class="nav-link{% if nav_catalog %} active{% endif %}" {% if nav_catalog %}aria-current="page"{% endif %} href="{% url 'inventory:catalog_source_list' %}">Parts catalogue</a></li>
             </ul>
             <a class="btn btn-outline-light btn-sm" href="{% url 'inventory:item_add' %}">+ Add item</a>
         </div>
