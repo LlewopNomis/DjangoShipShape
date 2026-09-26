@@ -6,6 +6,8 @@ from django.db import models
 from django.db.models.functions import Lower
 from treebeard.mp_tree import MP_Node
 
+from .images import shrink_photo
+
 # Shared by ItemPhoto/LocationPhoto/RepairPhoto: photos plus PDFs (manuals,
 # receipts, warranty docs) — PDFs are stored as-is rather than converted to
 # an image, since that preserves multi-page/searchable/full-quality
@@ -178,6 +180,10 @@ class ItemPhoto(models.Model):
     def is_pdf(self):
         return self.image.name.lower().endswith('.pdf')
 
+    def save(self, *args, **kwargs):
+        shrink_photo(self.image)
+        super().save(*args, **kwargs)
+
 
 class Spare(models.Model):
     """A spare-parts kit for a specific inventory item (e.g. the spare washers
@@ -237,6 +243,10 @@ class SparePhoto(models.Model):
     def is_pdf(self):
         return self.image.name.lower().endswith('.pdf')
 
+    def save(self, *args, **kwargs):
+        shrink_photo(self.image)
+        super().save(*args, **kwargs)
+
 
 class LocationPhoto(models.Model):
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name='photos')
@@ -255,6 +265,10 @@ class LocationPhoto(models.Model):
     @property
     def is_pdf(self):
         return self.image.name.lower().endswith('.pdf')
+
+    def save(self, *args, **kwargs):
+        shrink_photo(self.image)
+        super().save(*args, **kwargs)
 
 
 class LocationHotspot(models.Model):
@@ -346,6 +360,10 @@ class RepairPhoto(models.Model):
     @property
     def is_pdf(self):
         return self.image.name.lower().endswith('.pdf')
+
+    def save(self, *args, **kwargs):
+        shrink_photo(self.image)
+        super().save(*args, **kwargs)
 
 
 class RepairConsumedItem(models.Model):

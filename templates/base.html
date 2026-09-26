@@ -44,6 +44,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 no-print">
     <div class="container">
         <a class="navbar-brand" href="{% url 'inventory:home' %}">⚓ ShipShape</a>
+        {% if user.is_authenticated %}
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -67,7 +68,12 @@
                 <li class="nav-item"><a class="nav-link{% if nav_catalog %} active{% endif %}" {% if nav_catalog %}aria-current="page"{% endif %} href="{% url 'inventory:catalog_source_list' %}">Parts catalogue</a></li>
             </ul>
             <a class="btn btn-outline-light btn-sm" href="{% url 'inventory:item_add' %}">+ Add item</a>
+            <form method="post" action="{% url 'logout' %}" class="ms-lg-2 mt-2 mt-lg-0">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-link btn-sm link-light link-opacity-75 link-opacity-100-hover text-decoration-none px-0" title="Signed in as {{ user.get_username }}">Log out</button>
+            </form>
         </div>
+        {% endif %}
     </div>
 </nav>
 

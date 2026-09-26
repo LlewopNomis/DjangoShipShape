@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -20,18 +22,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-# Falls back to a dev-only key so a fresh clone runs out of the box; set
-# DJANGO_SECRET_KEY yourself if you ever expose this beyond localhost.
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-7*!idpkdfb@k*596vdu1)*!xkxtv+w=0dv=_2vj!yhu!6nl1&e',
-)
+# Everything below that differs between a local checkout and the server is
+# read from the environment, so a fresh clone still runs out of the box with
+# no setup. On the server, set DJANGO_DEBUG=0, DJANGO_SECRET_KEY and
+# DJANGO_ALLOWED_HOSTS (see README, "Running on a server").
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 
-ALLOWED_HOSTS = []
+# SECURITY WARNING: keep the secret key used in production secret!
+# Falls back to a dev-only key so a fresh clone runs out of the box — but
+# only while DEBUG is on, so the server can't accidentally run with it.
+_DEV_SECRET_KEY = 'django-insecure-7*!idpkdfb@k*596vdu1)*!xkxtv+w=0dv=_2vj!yhu!6nl1&e'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', _DEV_SECRET_KEY)
+if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
+    raise ImproperlyConfigured('Set DJANGO_SECRET_KEY when running with DJANGO_DEBUG=0.')
+
+# Comma-separated, e.g. 'ionos-vps,100.118.115.74'. With DEBUG on, Django
+# already allows localhost when this is empty.
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
 
 
 # Application definition
@@ -49,10 +58,16 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Serves collected static files straight from gunicorn — there's no
+    # nginx in front of the app on the server.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Every page needs a login, as a backstop behind Tailscale in case a
+    # device on the tailnet is lost. Opt a view out with @login_not_required.
+    'django.contrib.auth.middleware.LoginRequiredMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -124,10 +139,25 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+# Where `manage.py collectstatic` gathers admin/treebeard assets for
+# WhiteNoise to serve when DEBUG is off.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # User-uploaded photos (items and locations)
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Uploaded photos are downsized to fit within this many pixels on their
+# longest side (see inventory.images.shrink_photo) — plenty to read a part
+# number off, at a fraction of a phone camera's 3-5 MB.
+PHOTO_MAX_DIMENSION = 1600
+
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = 'login'
+# Stay logged in for 90 days, so snapping a photo on the phone doesn't
+# mean logging in again every couple of weeks.
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 90
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

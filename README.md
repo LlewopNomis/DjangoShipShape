@@ -38,7 +38,8 @@ nobody can ever say what's actually aboard, or what it would cost to replace.
   primary photo (or first uploaded) as a thumbnail, no extra setup needed.
 - **Django admin** with drag-and-drop tree reordering for locations and
   categories, for quick bulk edits.
-- **SQLite, no external services** — runs entirely on your own machine.
+- **SQLite, no external services** — runs on your own machine, or on a
+  small server over Tailscale (see [Running on a server](#running-on-a-server)).
 
 ## Roadmap
 
@@ -49,7 +50,8 @@ built yet — the data model is just ready for it.
 
 ## Tech stack
 
-Django 6.1 · django-treebeard · Pillow · Bootstrap 5 (via CDN) · SQLite
+Django 6.1 · django-treebeard · Pillow · Bootstrap 5 (via CDN) · SQLite ·
+gunicorn + WhiteNoise for serving
 
 ## Getting started
 
@@ -60,23 +62,46 @@ git clone <this-repo-url>
 cd DjangoShipShape
 uv sync
 uv run manage.py migrate
-uv run manage.py createsuperuser   # optional, only needed for /admin/
+uv run manage.py createsuperuser   # the login for the app and /admin/
 uv run manage.py runserver
 ```
 
 Then open http://127.0.0.1:8000/.
 
-This is a local, single-user tool — the main app has no login, only
-`/admin/` does. It's not designed to be exposed to the internet as-is.
+Every page needs a login — use the account from `createsuperuser` (the
+`createsuperuser` step above is therefore required, not optional). Sessions
+last 90 days, so you won't be asked often.
 
-### Optional: your own secret key
+### Running on a server
 
-A dev-only `SECRET_KEY` ships as a fallback so the app runs out of the box.
-If you ever run this somewhere beyond localhost, set your own:
+The app is built to run behind [Tailscale](https://tailscale.com/) rather
+than on the public internet: gunicorn binds to the machine's Tailscale IP,
+so only devices on your tailnet can reach it (WireGuard encrypts the
+traffic, so plain HTTP is fine). There's no nginx needed — WhiteNoise
+serves static files and Django serves uploaded photos, which is plenty for
+a single user.
+
+Settings that differ from a local checkout come from environment variables:
+
+| Variable | Server value |
+|---|---|
+| `DJANGO_DEBUG` | `0` |
+| `DJANGO_SECRET_KEY` | a long random string — `python -c 'import secrets; print(secrets.token_urlsafe(50))'`. Required when `DJANGO_DEBUG=0`; the app refuses to start with the built-in dev key. |
+| `DJANGO_ALLOWED_HOSTS` | comma-separated hostnames/IPs you'll browse to, e.g. `ionos-vps,100.118.115.74` |
+
+Then:
 
 ```bash
-export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+uv sync
+uv run manage.py migrate
+uv run manage.py collectstatic --noinput
+uv run gunicorn djangoshipshape.wsgi -b <tailscale-ip>:8001 -w 2
 ```
+
+Uploaded photos are resized to fit 1600 px on their longest side and
+rotated upright (phones often store portrait shots sideways with a
+rotation flag). Re-encoding also drops embedded EXIF data such as GPS
+position. PDFs and GIFs are stored as-is.
 
 ## Using it
 
