@@ -7,7 +7,9 @@ import tempfile
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
@@ -15,6 +17,18 @@ from PIL import Image
 from .models import InventoryItem, ItemPhoto, Location
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp()
+
+
+def make_mpo(size, orientation=None):
+    """A phone-style multi-picture JPEG: the main shot plus a small extra frame."""
+    exif = Image.Exif()
+    if orientation:
+        exif[0x0112] = orientation
+    out = io.BytesIO()
+    Image.new('RGB', size, 'navy').save(
+        out, format='MPO', save_all=True, append_images=[Image.new('RGB', (100, 75))], exif=exif,
+    )
+    return out.getvalue()
 
 
 def make_jpeg(size, orientation=None):
@@ -76,6 +90,11 @@ class ShrinkPhotoTests(TestCase):
         self.assertEqual(img.size, (1200, 1600))
         self.assertEqual(img.getexif().get(0x0112, 1), 1)
 
+    def test_phone_mpo_photo_is_downsized_to_plain_jpeg(self):
+        stored = self.upload('phone.jpg', make_mpo((4000, 3000), orientation=6))
+        img = Image.open(io.BytesIO(stored))
+        self.assertEqual((img.format, img.size), ('JPEG', (1200, 1600)))
+
     def test_small_upright_photo_is_left_untouched(self):
         original = make_jpeg((800, 600))
         self.assertEqual(self.upload('small.jpg', original), original)
@@ -93,6 +112,29 @@ class ShrinkPhotoTests(TestCase):
         photo.caption = 'Old impeller'
         photo.save()
         self.assertEqual(ItemPhoto.objects.get().image.name, name)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT, PHOTO_MAX_DIMENSION=1600)
+class ShrinkPhotosCommandTests(TestCase):
+    def test_shrinks_existing_photos_in_place(self):
+        item = InventoryItem.objects.create(name='Impeller', location=Location.add_root(name='Engine bay'))
+        # Written straight to storage, bypassing save()'s shrinking, as older uploads were.
+        photo = ItemPhoto(item=item)
+        photo.image.save('old.jpg', ContentFile(make_mpo((4000, 3000))), save=False)
+        ItemPhoto.objects.bulk_create([photo])
+        path = ItemPhoto.objects.get().image.path
+
+        call_command('shrink_photos', '--dry-run', stdout=io.StringIO())
+        self.assertEqual(Image.open(path).size, (4000, 3000))
+
+        out = io.StringIO()
+        call_command('shrink_photos', stdout=out)
+        self.assertEqual(Image.open(path).size, (1600, 1200))
+        self.assertIn('1 shrunk', out.getvalue())
+
+        out = io.StringIO()
+        call_command('shrink_photos', stdout=out)
+        self.assertIn('0 shrunk', out.getvalue())
 
 
 class ProductionSettingsTests(TestCase):
