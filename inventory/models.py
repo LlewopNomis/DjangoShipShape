@@ -1,8 +1,10 @@
+import os
 from decimal import Decimal
 from urllib.parse import quote
 
 from django.core.validators import FileExtensionValidator, MinValueValidator
-from django.db import models
+from django.db import models, transaction
+from django.db.models.signals import post_delete, pre_save
 from django.db.models.functions import Lower
 from treebeard.mp_tree import MP_Node
 
@@ -753,3 +755,71 @@ class RfqLine(models.Model):
 
     def __str__(self):
         return f'{self.requirement.name} on {self.rfq}'
+
+
+# --- Uploaded-file cleanup ----------------------------------------------
+#
+# Django deletes a row but never the file its FileField points at, so
+# without this, removing a photo — or an item, spare, location, repair or
+# catalog, whose photos/PDF cascade away with it — leaves the file behind in
+# media/ forever. Handled here with signals rather than in the delete views
+# so cascades, treebeard subtree deletes, and the admin are all covered too.
+
+# Every model with an uploaded file, and that file's field name.
+FILE_FIELDS = {
+    ItemPhoto: 'image',
+    SparePhoto: 'image',
+    LocationPhoto: 'image',
+    RepairPhoto: 'image',
+    CatalogSource: 'file',
+}
+
+
+def _delete_file_on_commit(field_file):
+    """Delete a stored file once the surrounding transaction commits — so a
+    delete that fails or rolls back never loses the file its row still needs.
+    Skips files another row still points at, and removes the per-object
+    folder (e.g. items/42/) once it's empty."""
+    name = field_file.name
+    if not name:
+        return
+    storage = field_file.storage
+
+    def delete():
+        still_used = any(
+            model.objects.filter(**{field: name}).exists() for model, field in FILE_FIELDS.items()
+        )
+        if still_used:
+            return
+        storage.delete(name)
+        folder = os.path.dirname(name)
+        if not folder:
+            return
+        try:
+            dirs, files = storage.listdir(folder)
+            if not dirs and not files:
+                os.rmdir(storage.path(folder))
+        except (OSError, NotImplementedError):
+            pass
+
+    transaction.on_commit(delete)
+
+
+def _delete_file_with_row(sender, instance, **kwargs):
+    _delete_file_on_commit(getattr(instance, FILE_FIELDS[sender]))
+
+
+def _delete_replaced_file(sender, instance, **kwargs):
+    """When an existing row's file is swapped for a new upload (e.g. a
+    catalog's PDF replaced on its edit form), delete the old file."""
+    if instance._state.adding or not instance.pk:
+        return
+    field = FILE_FIELDS[sender]
+    old = sender.objects.filter(pk=instance.pk).values_list(field, flat=True).first()
+    if old and old != getattr(instance, field).name:
+        _delete_file_on_commit(getattr(sender(**{field: old}), field))
+
+
+for _model in FILE_FIELDS:
+    post_delete.connect(_delete_file_with_row, sender=_model, dispatch_uid=f'delete_file_{_model.__name__}')
+    pre_save.connect(_delete_replaced_file, sender=_model, dispatch_uid=f'replace_file_{_model.__name__}')

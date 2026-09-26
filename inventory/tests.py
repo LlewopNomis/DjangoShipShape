@@ -14,7 +14,9 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
-from .models import InventoryItem, ItemPhoto, Location
+from .models import (
+    CatalogSource, InventoryItem, ItemPhoto, Location, LocationPhoto, Repair, RepairPhoto, Spare, SparePhoto,
+)
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp()
 
@@ -135,6 +137,124 @@ class ShrinkPhotosCommandTests(TestCase):
         out = io.StringIO()
         call_command('shrink_photos', stdout=out)
         self.assertIn('0 shrunk', out.getvalue())
+
+
+class DeletedFilesAreRemovedTests(TestCase):
+    """Deleting a row with an uploaded file — directly, or by cascade from
+    the thing it's attached to — removes the file (and its emptied folder)."""
+
+    def setUp(self):
+        # A fresh media folder per test: row ids repeat across tests, so a
+        # shared one would leave other tests' files in e.g. items/1/.
+        media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, media_root, ignore_errors=True)
+        self.enterContext(override_settings(MEDIA_ROOT=media_root))
+        self.client.force_login(get_user_model().objects.create_user('simon', password='pw'))
+        self.location = Location.add_root(name='Engine bay')
+        self.item = InventoryItem.objects.create(name='Impeller', location=self.location)
+
+    def attach(self, model, name='photo.jpg', **owner):
+        photo = model(**owner)
+        photo.image.save(name, ContentFile(make_jpeg((100, 100))))
+        return photo.image.path
+
+    def post(self, url_name, pk):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse(url_name, args=[pk]))
+
+    def test_removing_a_photo_deletes_its_file_and_empty_folder(self):
+        path = self.attach(ItemPhoto, item=self.item)
+        self.post('inventory:item_photo_delete', ItemPhoto.objects.get().pk)
+        self.assertFalse(os.path.exists(path))
+        self.assertFalse(os.path.exists(os.path.dirname(path)))
+
+    def test_folder_kept_while_other_photos_remain(self):
+        gone = self.attach(ItemPhoto, 'a.jpg', item=self.item)
+        kept = self.attach(ItemPhoto, 'b.jpg', item=self.item)
+        self.post('inventory:item_photo_delete', ItemPhoto.objects.get(image__endswith='a.jpg').pk)
+        self.assertFalse(os.path.exists(gone))
+        self.assertTrue(os.path.exists(kept))
+
+    def test_deleting_an_item_deletes_its_photos_and_its_spares_photos(self):
+        item_photo = self.attach(ItemPhoto, item=self.item)
+        spare = Spare.objects.create(item=self.item, location=self.location, name='Spare impeller')
+        spare_photo = self.attach(SparePhoto, spare=spare)
+        self.post('inventory:item_delete', self.item.pk)
+        self.assertFalse(InventoryItem.objects.exists())
+        self.assertFalse(os.path.exists(item_photo))
+        self.assertFalse(os.path.exists(spare_photo))
+
+    def test_deleting_a_location_deletes_photos_of_it_and_its_sublocations(self):
+        cockpit = Location.add_root(name='Cockpit')
+        locker = cockpit.add_child(name='Port locker')
+        parent_photo = self.attach(LocationPhoto, location=cockpit)
+        child_photo = self.attach(LocationPhoto, location=locker)
+        self.post('inventory:location_delete', cockpit.pk)
+        self.assertFalse(Location.objects.filter(name='Port locker').exists())
+        self.assertFalse(os.path.exists(parent_photo))
+        self.assertFalse(os.path.exists(child_photo))
+
+    def test_blocked_location_delete_keeps_photos(self):
+        # The location still has an item in it, so the delete is refused
+        # (PROTECT) — its photo must survive.
+        path = self.attach(LocationPhoto, location=self.location)
+        self.post('inventory:location_delete', self.location.pk)
+        self.assertTrue(Location.objects.filter(pk=self.location.pk).exists())
+        self.assertTrue(os.path.exists(path))
+
+    def test_deleting_a_repair_deletes_its_photos(self):
+        repair = Repair.objects.create(title='Replace impeller', date='2026-09-26')
+        path = self.attach(RepairPhoto, repair=repair)
+        self.post('inventory:repair_delete', repair.pk)
+        self.assertFalse(os.path.exists(path))
+
+    def test_deleting_a_catalog_deletes_its_pdf(self):
+        catalog = CatalogSource(name='4JH3E parts')
+        catalog.file.save('4jh3e.pdf', ContentFile(b'%PDF-1.4'))
+        path = catalog.file.path
+        self.post('inventory:catalog_source_delete', catalog.pk)
+        self.assertFalse(os.path.exists(path))
+
+    def test_replacing_a_catalog_pdf_deletes_the_old_one(self):
+        catalog = CatalogSource(name='4JH3E parts')
+        catalog.file.save('old.pdf', ContentFile(b'%PDF-1.4 old'))
+        old_path = catalog.file.path
+        with self.captureOnCommitCallbacks(execute=True):
+            catalog.file.save('new.pdf', ContentFile(b'%PDF-1.4 new'))
+        self.assertFalse(os.path.exists(old_path))
+        self.assertTrue(os.path.exists(catalog.file.path))
+
+    def test_file_kept_if_the_delete_rolls_back(self):
+        path = self.attach(ItemPhoto, item=self.item)
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            ItemPhoto.objects.get().delete()
+        # The transaction never committed, so the queued delete never ran.
+        self.assertEqual(len(callbacks), 1)
+        self.assertTrue(os.path.exists(path))
+
+
+class CleanMediaCommandTests(TestCase):
+    def test_lists_then_deletes_only_unreferenced_files(self):
+        media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, media_root, ignore_errors=True)
+        with override_settings(MEDIA_ROOT=media_root):
+            item = InventoryItem.objects.create(name='Impeller', location=Location.add_root(name='Engine bay'))
+            photo = ItemPhoto(item=item)
+            photo.image.save('kept.jpg', ContentFile(make_jpeg((100, 100))))
+            orphan = os.path.join(media_root, 'items', '999', 'stray.jpg')
+            os.makedirs(os.path.dirname(orphan))
+            with open(orphan, 'wb') as f:
+                f.write(b'x')
+
+            out = io.StringIO()
+            call_command('clean_media', stdout=out)
+            self.assertIn('items/999/stray.jpg', out.getvalue())
+            self.assertNotIn('kept.jpg', out.getvalue())
+            self.assertTrue(os.path.exists(orphan))
+
+            call_command('clean_media', '--delete', stdout=io.StringIO())
+            self.assertFalse(os.path.exists(os.path.dirname(orphan)))
+            self.assertTrue(os.path.exists(photo.image.path))
 
 
 class ProductionSettingsTests(TestCase):
