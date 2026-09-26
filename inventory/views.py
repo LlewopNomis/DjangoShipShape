@@ -1,4 +1,6 @@
+import re
 from decimal import Decimal
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.db import transaction
@@ -82,6 +84,52 @@ CATALOG_PART_SORT_FIELDS = {
     'part_number': 'part_number',
     'description': 'description',
 }
+
+
+def natural_key(value):
+    """Sort key that orders embedded numbers numerically, so catalog item/fig
+    numbers like '9', '14-1', '28' sort as a reader expects rather than as
+    plain strings ('14-1' < '28' < '9')."""
+    return [(0, int(tok), '') if tok.isdigit() else (1, 0, tok.lower())
+            for tok in re.findall(r'\d+|\D+', value or '')]
+
+
+# Sortable columns on a job's requirements table. Sorted in Python (a job
+# only has a handful of rows) because item/fig numbers need natural ordering.
+# Each maps to a key function; rows where the key is empty always sort last.
+REQUIREMENT_SORT_KEYS = {
+    'description': lambda r: natural_key(r.name),
+    'part_number': lambda r: natural_key(r.part_number),
+    'item_no': lambda r: natural_key(r.catalog_part.item_no if r.catalog_part else ''),
+    'fig': lambda r: (
+        natural_key(r.catalog_part.section.fig_number) + [(2, 0, r.catalog_part.section.name.lower())]
+        if r.catalog_part else []
+    ),
+    'category': lambda r: natural_key(r.category.name if r.category else ''),
+    'needed': lambda r: r.quantity_needed,
+    'vendor': lambda r: natural_key(r.rfq_vendor.name if r.rfq_vendor else ''),
+}
+
+
+def sort_requirements(requirements, sort):
+    """Sort by a comma-separated list of columns, e.g. 'fig,-part_number' —
+    the first is the primary sort, later ones break ties. Done as one stable
+    sort per column, least significant first; rows blank in a column always
+    go after the non-blank ones for that column, whichever direction."""
+    rows = list(requirements)
+    terms = [t for t in sort.split(',') if t]
+    # Within a fig, fall back to the manual's own item order unless the
+    # user has chosen an explicit No. sort of their own.
+    if any(t.lstrip('-') == 'fig' for t in terms) and not any(t.lstrip('-') == 'item_no' for t in terms):
+        terms.append('item_no')
+    for term in reversed(terms):
+        key = REQUIREMENT_SORT_KEYS.get(term.lstrip('-'))
+        if key is None:
+            continue
+        present = [r for r in rows if key(r) not in ('', [], None)]
+        missing = [r for r in rows if key(r) in ('', [], None)]
+        rows = sorted(present, key=key, reverse=term.startswith('-')) + missing
+    return rows
 
 
 # Sortable columns on the repair log page.
@@ -868,7 +916,9 @@ class JobDetailView(DetailView):
             requirements = requirements.filter(rfq_vendor__isnull=True)
         elif vendor_filter:
             requirements = requirements.filter(rfq_vendor_id=vendor_filter)
-        context['requirements'] = requirements
+        sort = self.request.GET.get('sort', '')
+        context['requirements'] = sort_requirements(requirements, sort)
+        context['sort'] = sort
         context['requirement_form'] = PartRequirementForm()
         context['vendor_filter'] = vendor_filter
         context['assigned_vendors'] = Vendor.objects.filter(
@@ -955,9 +1005,10 @@ def requirement_set_rfq_vendor(request, pk):
         requirement.rfq_vendor_id = vendor_id
         requirement.save(update_fields=['rfq_vendor'])
     redirect_url = reverse('inventory:job_detail', args=[requirement.job_id])
-    keep_filter = request.POST.get('vendor_filter', '')
-    if keep_filter:
-        redirect_url += f'?vendor={keep_filter}'
+    keep = {k: request.POST.get(v, '') for k, v in (('vendor', 'vendor_filter'), ('sort', 'sort'))}
+    keep = {k: v for k, v in keep.items() if v}
+    if keep:
+        redirect_url += f'?{urlencode(keep)}'
     return redirect(redirect_url)
 
 

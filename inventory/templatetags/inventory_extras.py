@@ -51,6 +51,51 @@ def sort_header(context, field, label):
 
 
 @register.simple_tag(takes_context=True)
+def multi_sort_header(context, field, label):
+    """Like sort_header, but GET param 'sort' is a comma-separated list of
+    columns (e.g. 'fig,-item_no'), primary first. A plain click sorts by this
+    column alone (toggling direction if it already is the only sort); the
+    data-sort-add URL, followed on shift-click, instead cycles this column
+    within the list: add as the last tie-breaker -> flip to descending ->
+    remove. Shows the column's position in the list when there's more than one."""
+    request = context['request']
+    terms = [t for t in request.GET.get('sort', '').split(',') if t]
+    fields = [t.lstrip('-') for t in terms]
+
+    def url(new_terms):
+        params = request.GET.copy()
+        if new_terms:
+            params['sort'] = ','.join(new_terms)
+        else:
+            params.pop('sort', None)
+        params.pop('page', None)
+        return '?' + params.urlencode()
+
+    click_terms = [f'-{field}'] if terms == [field] else [field]
+    if field in fields:
+        i = fields.index(field)
+        if terms[i].startswith('-'):
+            add_terms = terms[:i] + terms[i + 1:]
+        else:
+            add_terms = terms[:i] + [f'-{field}'] + terms[i + 1:]
+    else:
+        add_terms = terms + [field]
+
+    icon = ''
+    if field in fields:
+        i = fields.index(field)
+        icon_class = 'sort-icon sort-icon-desc' if terms[i].startswith('-') else 'sort-icon'
+        rank = format_html('<sup class="sort-rank">{}</sup>', i + 1) if len(terms) > 1 else ''
+        icon = format_html('<span class="{}">{}</span>{}', icon_class, mark_safe(_SORT_ICON_SVG), rank)
+
+    return format_html(
+        '<a href="{}" data-sort-add="{}" class="sort-header" '
+        'title="Click to sort by this column; shift-click to add it as a further sort">{} {}</a>',
+        url(click_terms), url(add_terms), label, icon,
+    )
+
+
+@register.simple_tag(takes_context=True)
 def nav_is_active(context, *prefixes):
     """True if the current view's url_name belongs to one of the given
     sections, e.g. nav_is_active('item', 'spare') matches item_list,

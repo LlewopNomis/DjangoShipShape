@@ -33,6 +33,7 @@
     <div class="row g-2 align-items-end mb-3">
         <div class="col-auto">
             <form method="get">
+                {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
                 <label class="form-label small mb-1" for="vendor-filter">RFQ vendor</label>
                 <select id="vendor-filter" name="vendor" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="" {% if not vendor_filter %}selected{% endif %}>All</option>
@@ -55,34 +56,77 @@
     </div>
 
     {% if requirements %}
-        <div class="list-group mb-3">
-            {% for req in requirements %}
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <a href="{% url 'inventory:requirement_detail' req.pk %}" class="text-decoration-none text-reset flex-grow-1">
-                        <strong>{{ req.name }}</strong>
-                        {% if req.part_number %}<span class="text-muted small">#{{ req.part_number }}</span>{% endif %}
-                        {% if req.catalog_part %}{% with cp=req.catalog_part %}<span class="text-muted small">{% if cp.item_no %}No. {{ cp.item_no }}, {% endif %}{{ cp.section.catalog.name }}, {{ cp.section.name }}</span>{% endwith %}{% endif %}
-                        {% if req.category %}<span class="text-muted small"> · {{ req.category }}</span>{% endif %}
-                        <span class="text-muted small"> · need {{ req.quantity_needed|qty }}{% if req.unit %} {{ req.unit }}{% endif %}, ordered {{ req.ordered_quantity|qty }}</span>
-                        {% if req.is_fulfilled %}
-                            <span class="badge bg-success">Fulfilled</span>
-                        {% elif req.best_option %}
-                            <span class="badge bg-light text-dark border">best ${{ req.best_option.unit_price|floatformat:"2g" }}/unit</span>
-                        {% endif %}
-                    </a>
-                    <form method="post" action="{% url 'inventory:requirement_set_rfq_vendor' req.pk %}" class="ms-2">
-                        {% csrf_token %}
-                        <input type="hidden" name="vendor_filter" value="{{ vendor_filter }}">
-                        <select name="rfq_vendor" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()" title="RFQ vendor for this part">
-                            <option value="">— no vendor —</option>
-                            {% for v in all_vendors %}
-                                <option value="{{ v.pk }}" {% if req.rfq_vendor_id == v.pk %}selected{% endif %}>{{ v.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </form>
-                </div>
-            {% endfor %}
+        <p class="text-muted small mb-1">
+            Shift-click a column header to sort by it next (click again to reverse, a third time to remove).
+            {% if sort %}<a href="?{% if vendor_filter %}vendor={{ vendor_filter|urlencode }}{% endif %}">Clear sort</a>{% endif %}
+        </p>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>{% multi_sort_header 'description' 'Description' %}</th>
+                        <th>{% multi_sort_header 'part_number' 'Part number' %}</th>
+                        <th>{% multi_sort_header 'item_no' 'No.' %}</th>
+                        <th>{% multi_sort_header 'fig' 'Fig' %}</th>
+                        <th>{% multi_sort_header 'category' 'Category' %}</th>
+                        <th class="text-nowrap">{% multi_sort_header 'needed' 'Need / ordered' %}</th>
+                        <th>Status</th>
+                        <th>{% multi_sort_header 'vendor' 'RFQ vendor' %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in requirements %}
+                        {% with cp=req.catalog_part %}
+                        <tr>
+                            <td><a href="{% url 'inventory:requirement_detail' req.pk %}">{{ req.name }}</a></td>
+                            <td class="text-nowrap">{{ req.part_number }}</td>
+                            <td class="text-nowrap">{% if cp.item_no %}{{ cp.item_no }}{% endif %}</td>
+                            <td>
+                                {% if cp %}
+                                    <a href="{% url 'inventory:catalog_section_detail' cp.section.pk %}" class="text-reset" title="{{ cp.section.catalog.name }}">
+                                        {% if cp.section.fig_number %}Fig.{{ cp.section.fig_number }} {% endif %}{{ cp.section.name }}</a>
+                                    {% if cp.section.page_number %}<span class="text-muted small text-nowrap">p.{{ cp.section.page_number }}</span>{% endif %}
+                                {% endif %}
+                            </td>
+                            <td>{{ req.category|default:"" }}</td>
+                            <td class="text-nowrap">{{ req.quantity_needed|qty }}{% if req.unit %} {{ req.unit }}{% endif %} / {{ req.ordered_quantity|qty }}</td>
+                            <td>
+                                {% if req.is_fulfilled %}
+                                    <span class="badge bg-success">Fulfilled</span>
+                                {% elif req.best_option %}
+                                    <span class="badge bg-light text-dark border text-nowrap">best ${{ req.best_option.unit_price|floatformat:"2g" }}/unit</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <form method="post" action="{% url 'inventory:requirement_set_rfq_vendor' req.pk %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="vendor_filter" value="{{ vendor_filter }}">
+                                    <input type="hidden" name="sort" value="{{ sort }}">
+                                    <select name="rfq_vendor" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()" title="RFQ vendor for this part">
+                                        <option value="">— no vendor —</option>
+                                        {% for v in all_vendors %}
+                                            <option value="{{ v.pk }}" {% if req.rfq_vendor_id == v.pk %}selected{% endif %}>{{ v.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endwith %}
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
+        <script>
+            // Shift-click on a header follows its "add to sort" URL instead of
+            // the plain one (and suppresses the browser's shift-click-opens-a-
+            // new-window / text-selection behaviour).
+            document.querySelectorAll('a[data-sort-add]').forEach(function (a) {
+                a.addEventListener('mousedown', function (e) { if (e.shiftKey) e.preventDefault(); });
+                a.addEventListener('click', function (e) {
+                    if (e.shiftKey) { e.preventDefault(); window.location.href = a.dataset.sortAdd; }
+                });
+            });
+        </script>
     {% else %}
         <p class="text-muted">No part requirements match this filter.</p>
     {% endif %}
