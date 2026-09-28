@@ -98,15 +98,27 @@ uv run manage.py collectstatic --noinput
 uv run gunicorn djangoshipshape.wsgi -b <tailscale-ip>:8001 -w 2
 ```
 
-To ship later changes, push to `main` and run `deploy.sh` on the server:
+#### Deploying updates
+
+Commit and push to `main` as usual, then run this from your own machine:
 
 ```bash
-ssh ionos 'bash ~/shipshape/deploy.sh'
+ssh ionos 'cd ~/shipshape && git pull --ff-only && bash deploy.sh'
 ```
 
-It pulls, syncs dependencies, snapshots the database if there are
-migrations to apply, migrates, collects static files and restarts
-`shipshape.service` — nothing else on the server is touched.
+- `ssh ionos '…'` logs in to the server, runs the quoted commands there,
+  and logs out again.
+- `cd ~/shipshape && git pull --ff-only` fetches the latest `main` from
+  GitHub, so the newest version of `deploy.sh` itself is what runs.
+  `--ff-only` refuses to pull if the server's copy has changes of its own,
+  rather than merging them.
+- `bash deploy.sh` syncs dependencies, snapshots the database if there are
+  migrations to apply, migrates, collects static files and restarts
+  `shipshape.service`. Nothing else on the server is touched.
+
+It prints each step as it goes and finishes with
+`==> Deployed <commit>`. If the service fails to start, it prints the
+recent log instead.
 
 Uploaded photos are resized to fit 1600 px on their longest side and
 rotated upright (phones often store portrait shots sideways with a

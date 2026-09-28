@@ -2,7 +2,7 @@
 # Deploy the latest main to the VPS. Run on the server, or from your own
 # machine with:
 #
-#     ssh ionos 'bash ~/shipshape/deploy.sh'
+#     ssh ionos 'cd ~/shipshape && git pull --ff-only && bash deploy.sh'
 #
 # Only ever touches ShipShape: this checkout and shipshape.service. The other
 # apps on the server (LedgerFinch, the Dip Harvester bot) are left alone.
