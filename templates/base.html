@@ -55,6 +55,7 @@
             {% nav_is_active 'category' as nav_categories %}
             {% nav_is_active 'repair' as nav_repairs %}
             {% nav_is_active 'job' 'requirement' 'option' 'rfq' as nav_jobs %}
+            {% nav_is_active 'equipment' as nav_equipment %}
             {% nav_is_active 'vendor' as nav_vendors %}
             {% nav_is_active 'catalog' as nav_catalog %}
             <ul class="navbar-nav me-auto">
@@ -64,6 +65,7 @@
                 <li class="nav-item"><a class="nav-link{% if nav_categories %} active{% endif %}" {% if nav_categories %}aria-current="page"{% endif %} href="{% url 'inventory:category_list' %}">Categories</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_repairs %} active{% endif %}" {% if nav_repairs %}aria-current="page"{% endif %} href="{% url 'inventory:repair_list' %}">Repair log</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_jobs %} active{% endif %}" {% if nav_jobs %}aria-current="page"{% endif %} href="{% url 'inventory:job_list' %}">Jobs</a></li>
+                <li class="nav-item"><a class="nav-link{% if nav_equipment %} active{% endif %}" {% if nav_equipment %}aria-current="page"{% endif %} href="{% url 'inventory:equipment_list' %}">Equipment</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_vendors %} active{% endif %}" {% if nav_vendors %}aria-current="page"{% endif %} href="{% url 'inventory:vendor_list' %}">Vendors</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_catalog %} active{% endif %}" {% if nav_catalog %}aria-current="page"{% endif %} href="{% url 'inventory:catalog_source_list' %}">Parts catalogue</a></li>
             </ul>

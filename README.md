@@ -151,6 +151,36 @@ position. PDFs and GIFs are stored as-is.
    category, date, optional location and hours spent, then use "Record use"
    to note which inventory items (and how many) it consumed. Stock updates
    immediately.
+6. Add your engine, hull or gear under **Equipment**, with its catalog,
+   model and serial number (or hull number / year), and pick it on the jobs
+   for it.
+
+### Importing or updating a parts catalog
+
+**Parts catalogue → Add** on the website only stores the catalog's name and
+PDF. The parts themselves are read out of the PDF by a command (the PDF needs
+a real text layer, not a scan, and must be in `media/catalogs/`):
+
+```bash
+uv run manage.py import_catalog "media/catalogs/4JH3E Parts Manual.pdf" --name "Yanmar 4JH3E"
+```
+
+**`--name` decides whether it updates or creates.** If it matches an existing
+catalog *exactly*, the import updates that catalog in place: figs are matched
+by number and parts by fig + No. + part number, so every part keeps its id and
+anything linked to it (requirements, items) stays linked. Nothing is deleted.
+A different name — even a typo like `Yanmar 4JH3-E` — creates a separate
+catalog with duplicate parts.
+
+It prints how many figs and parts it processed, and lists any lines that
+looked like parts but couldn't be read.
+
+On the server, snapshot the database first (`deploy.sh` only does that when
+there are migrations), then run the same command:
+
+```bash
+ssh ionos 'cd ~/shipshape && ~/backups/snapshot_shipshape.sh && set -a && . ./.env && set +a && ~/.local/bin/uv run python manage.py import_catalog "media/catalogs/4JH3E Parts Manual.pdf" --name "Yanmar 4JH3E"'
+```
 
 ## Data & backups
 

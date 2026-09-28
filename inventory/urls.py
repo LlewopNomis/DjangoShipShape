@@ -50,6 +50,11 @@ urlpatterns = [
     path('repairs/<int:pk>/consume/', views.repair_consume_item, name='repair_consume_item'),
     path('repairs/consumed/<int:pk>/delete/', views.repair_consumed_item_delete, name='repair_consumed_item_delete'),
 
+    path('equipment/', views.EquipmentListView.as_view(), name='equipment_list'),
+    path('equipment/add/', views.EquipmentCreateView.as_view(), name='equipment_add'),
+    path('equipment/<int:pk>/', views.EquipmentDetailView.as_view(), name='equipment_detail'),
+    path('equipment/<int:pk>/edit/', views.EquipmentUpdateView.as_view(), name='equipment_edit'),
+    path('equipment/<int:pk>/delete/', views.EquipmentDeleteView.as_view(), name='equipment_delete'),
     path('vendors/', views.VendorListView.as_view(), name='vendor_list'),
     path('vendors/add/', views.VendorCreateView.as_view(), name='vendor_add'),
     path('vendors/<int:pk>/', views.VendorDetailView.as_view(), name='vendor_detail'),

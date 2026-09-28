@@ -15,6 +15,7 @@
             <p class="text-muted mb-0">
                 {{ job.get_status_display }}
                 {% if job.location %} · <a href="{% url 'inventory:location_detail' job.location.pk %}">{{ job.location }}</a>{% endif %}
+                {% if job.equipment %} · <a href="{% url 'inventory:equipment_detail' job.equipment.pk %}">{{ job.equipment }}</a>{% endif %}
                 {% if job.target_date %} · due {{ job.target_date }}{% endif %}
                 · <strong>${{ job.ordered_cost|floatformat:"2g" }}</strong> ordered so far
             </p>

@@ -3,6 +3,8 @@ from django import forms
 from .models import (
     CatalogPart,
     CatalogSource,
+    CatalogVariant,
+    Equipment,
     InventoryItem,
     ItemCategory,
     ItemPhoto,
@@ -231,6 +233,25 @@ class RepairConsumedItemForm(BootstrapFormMixin, forms.ModelForm):
         return cleaned_data
 
 
+class CatalogVariantChoiceField(forms.ModelChoiceField):
+    """Names the catalog too — 'A' alone means nothing outside its catalog."""
+
+    def label_from_instance(self, obj):
+        return f'{obj.catalog.name} — {obj.name} ({obj.code})'
+
+
+class EquipmentForm(BootstrapFormMixin, forms.ModelForm):
+    location = IndentedModelChoiceField(queryset=Location.objects.all(), required=False)
+    variant = CatalogVariantChoiceField(
+        queryset=CatalogVariant.objects.select_related('catalog'), required=False,
+        help_text=Equipment._meta.get_field('variant').help_text,
+    )
+
+    class Meta:
+        model = Equipment
+        fields = ['name', 'location', 'catalog', 'variant', 'serial', 'notes']
+
+
 class VendorForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Vendor
@@ -242,7 +263,7 @@ class JobForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
         model = Job
-        fields = ['title', 'description', 'location', 'status', 'target_date']
+        fields = ['title', 'description', 'location', 'equipment', 'status', 'target_date']
         widgets = {'target_date': forms.DateInput(attrs={'type': 'date'})}
 
 

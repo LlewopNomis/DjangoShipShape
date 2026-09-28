@@ -7,6 +7,7 @@ import tempfile
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
@@ -16,7 +17,7 @@ from PIL import Image
 
 from .forms import PartRequirementForm
 from .models import (
-    CatalogPart, CatalogSection, CatalogSource, InventoryItem, ItemPhoto, Job, Location, LocationPhoto,
+    CatalogPart, CatalogPartFitment, CatalogSection, CatalogSource, CatalogVariant, Equipment, InventoryItem, ItemPhoto, Job, Location, LocationPhoto,
     PartRequirement, Repair, RepairPhoto, Spare, SparePhoto,
 )
 from .templatetags.inventory_extras import catalog_part_field
@@ -325,3 +326,47 @@ class CatalogPartPickerTests(TestCase):
         })
         requirement.refresh_from_db()
         self.assertEqual(requirement.catalog_part, self.current)
+
+
+class EquipmentTests(TestCase):
+    """Equipment records what you own (catalog, variant, serial) so catalog
+    parts can later be checked against it."""
+
+    def setUp(self):
+        self.client.force_login(get_user_model().objects.create_user('simon', password='pw'))
+        self.catalog = CatalogSource.objects.create(name='Yanmar 4JH3E', file='catalogs/4jh3e.pdf')
+        self.variant = CatalogVariant.objects.create(catalog=self.catalog, code='A', name='4JH3E')
+        self.other_catalog = CatalogSource.objects.create(name='Hull manual', file='catalogs/hull.pdf')
+        self.other_variant = CatalogVariant.objects.create(catalog=self.other_catalog, code='S', name='Sloop')
+
+    def post_equipment(self, **data):
+        return self.client.post(reverse('inventory:equipment_add'), {'name': 'Main engine', **data})
+
+    def test_add_equipment_fills_in_the_catalog_from_the_variant(self):
+        self.post_equipment(variant=self.variant.pk, serial='E23123')
+        equipment = Equipment.objects.get()
+        self.assertEqual((equipment.catalog, equipment.variant, equipment.serial), (self.catalog, self.variant, 'E23123'))
+
+    def test_variant_from_another_catalog_is_rejected(self):
+        response = self.post_equipment(catalog=self.catalog.pk, variant=self.other_variant.pk)
+        self.assertContains(response, 'That variant belongs to a different catalog.')
+        self.assertFalse(Equipment.objects.exists())
+
+    def test_job_links_to_equipment_and_deleting_it_keeps_the_job(self):
+        equipment = Equipment.objects.create(name='Main engine', variant=self.variant, catalog=self.catalog)
+        self.client.post(reverse('inventory:job_add'), {
+            'title': 'Heat exchanger', 'status': Job.STATUS_PLANNING, 'equipment': equipment.pk,
+        })
+        job = Job.objects.get()
+        self.assertEqual(job.equipment, equipment)
+        self.assertContains(self.client.get(reverse('inventory:equipment_detail', args=[equipment.pk])), 'Heat exchanger')
+        self.client.post(reverse('inventory:equipment_delete', args=[equipment.pk]))
+        job.refresh_from_db()
+        self.assertIsNone(job.equipment)
+
+    def test_fitment_variant_must_match_the_parts_catalog(self):
+        fig = CatalogSection.add_root(catalog=self.catalog, name='COOLING FRESH WATER COOLER', fig_number='28')
+        part = CatalogPart.objects.create(section=fig, item_no='22', part_number='24321-000800')
+        with self.assertRaises(ValidationError):
+            CatalogPartFitment(part=part, variant=self.other_variant).full_clean()
+        CatalogPartFitment(part=part, variant=self.variant, quantity=2, to_identifier='E25002').full_clean()

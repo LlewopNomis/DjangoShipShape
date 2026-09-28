@@ -2,6 +2,7 @@ import os
 from decimal import Decimal
 from urllib.parse import quote
 
+from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MinValueValidator
 from django.db import models, transaction
 from django.db.models.signals import post_delete, pre_save
@@ -432,6 +433,11 @@ class Job(models.Model):
         Location, on_delete=models.SET_NULL, related_name='jobs',
         null=True, blank=True,
     )
+    equipment = models.ForeignKey(
+        'Equipment', on_delete=models.SET_NULL, related_name='jobs',
+        null=True, blank=True,
+        help_text='The engine, hull or gear this job is on — used to check catalog parts fit it.',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PLANNING)
     target_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -680,6 +686,118 @@ class CatalogPart(models.Model):
 
     def __str__(self):
         return f'{self.part_number} — {self.description}' if self.description else self.part_number
+
+
+class CatalogVariant(models.Model):
+    """One model/configuration a catalog covers — the Yanmar manual's Q'ty
+    columns, e.g. A = 4JH3E, D = 4JH3-TE. A hull or deck-gear catalog might
+    have 'Sloop' / 'Cutter'. A catalog for a single model has just one."""
+
+    catalog = models.ForeignKey(CatalogSource, on_delete=models.CASCADE, related_name='variants')
+    code = models.CharField(max_length=10, help_text="The catalog's own column letter/code, e.g. 'A'.")
+    name = models.CharField(max_length=100, help_text="e.g. '4JH3E'.")
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['catalog', 'order', 'code']
+        constraints = [
+            models.UniqueConstraint(fields=['catalog', 'code'], name='unique_catalog_variant_code'),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.code})'
+
+
+class CatalogRemarkCode(models.Model):
+    """What a catalog's remarks letters mean (Yanmar: S = not interchangeable
+    either way, Z = discontinued, ...) — each manufacturer has its own."""
+
+    catalog = models.ForeignKey(CatalogSource, on_delete=models.CASCADE, related_name='remark_codes')
+    code = models.CharField(max_length=10)
+    meaning = models.CharField(max_length=300)
+
+    class Meta:
+        ordering = ['catalog', 'code']
+        constraints = [
+            models.UniqueConstraint(fields=['catalog', 'code'], name='unique_catalog_remark_code'),
+        ]
+
+    def __str__(self):
+        return f'{self.code}: {self.meaning}'
+
+
+class CatalogPartFitment(models.Model):
+    """When a catalog part applies: on which variant, how many, and between
+    which serial/hull numbers (or years). Several rows per part are fine; a
+    variant with no row doesn't use the part. Identifiers are free text,
+    compared in natural order (E9999 < E10000); blank = open-ended."""
+
+    part = models.ForeignKey(CatalogPart, on_delete=models.CASCADE, related_name='fitments')
+    variant = models.ForeignKey(CatalogVariant, on_delete=models.CASCADE, related_name='fitments')
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    from_identifier = models.CharField(
+        max_length=50, blank=True,
+        help_text='First serial/hull number (or year) this applies to. Blank = from the first one.',
+    )
+    to_identifier = models.CharField(
+        max_length=50, blank=True,
+        help_text='Last serial/hull number (or year) this applies to. Blank = no end.',
+    )
+
+    class Meta:
+        ordering = ['part', 'variant__order', 'from_identifier']
+        verbose_name = 'catalog part fitment'
+
+    def __str__(self):
+        span = ''
+        if self.from_identifier or self.to_identifier:
+            span = f' {self.from_identifier or "first"}–{self.to_identifier or "on"}'
+        return f'{self.part} on {self.variant.name}{span}'
+
+    def clean(self):
+        if self.part_id and self.variant_id and self.variant.catalog_id != self.part.section.catalog_id:
+            raise ValidationError({'variant': "That variant belongs to a different catalog from this part."})
+
+
+class Equipment(models.Model):
+    """Something you own that a catalog describes — an engine, a hull, a
+    winch — with its variant and serial/hull number, so catalog parts can be
+    checked against the exact one you have."""
+
+    name = models.CharField(max_length=200, help_text="e.g. 'Main engine'.")
+    location = models.ForeignKey(
+        Location, on_delete=models.SET_NULL, related_name='equipment',
+        null=True, blank=True,
+    )
+    catalog = models.ForeignKey(
+        CatalogSource, on_delete=models.SET_NULL, related_name='equipment',
+        null=True, blank=True,
+    )
+    variant = models.ForeignKey(
+        CatalogVariant, on_delete=models.SET_NULL, related_name='equipment',
+        null=True, blank=True,
+        help_text="Which of the catalog's models this is, e.g. 4JH3E (A).",
+    )
+    serial = models.CharField(
+        max_length=100, blank=True,
+        help_text='Engine serial number, hull identification number or model year — as the catalog uses it.',
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = 'equipment'
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        if self.variant_id:
+            if not self.catalog_id:
+                self.catalog_id = self.variant.catalog_id
+            elif self.variant.catalog_id != self.catalog_id:
+                raise ValidationError({'variant': "That variant belongs to a different catalog."})
 
 
 class Rfq(models.Model):

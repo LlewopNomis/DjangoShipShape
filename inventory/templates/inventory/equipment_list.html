@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Equipment — ShipShape{% endblock %}
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Equipment</h3>
+        <a href="{% url 'inventory:equipment_add' %}" class="btn btn-primary btn-sm">+ Add equipment</a>
+    </div>
+
+    {% if equipment_list %}
+        <div class="list-group">
+            {% for equipment in equipment_list %}
+                <a href="{% url 'inventory:equipment_detail' equipment.pk %}" class="list-group-item list-group-item-action">
+                    <strong>{{ equipment.name }}</strong>
+                    <div class="text-muted small">
+                        {% if equipment.variant %}{{ equipment.variant.name }}{% elif equipment.catalog %}{{ equipment.catalog }}{% endif %}
+                        {% if equipment.serial %} · {{ equipment.serial }}{% endif %}
+                        {% if equipment.location %} · {{ equipment.location }}{% endif %}
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">No equipment yet. <a href="{% url 'inventory:equipment_add' %}">Add your engine</a>, hull or gear with its serial number, so catalog parts can be checked against it.</p>
+    {% endif %}
+{% endblock %}

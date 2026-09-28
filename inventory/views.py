@@ -13,6 +13,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, T
 
 from .forms import (
     CatalogSourceForm,
+    EquipmentForm,
     InventoryItemForm,
     ItemCategoryEditForm,
     ItemCategoryForm,
@@ -37,6 +38,7 @@ from .models import (
     CatalogPart,
     CatalogSection,
     CatalogSource,
+    Equipment,
     InventoryItem,
     ItemCategory,
     ItemPhoto,
@@ -810,6 +812,52 @@ def repair_consumed_item_delete(request, pk):
             consumption.delete()
         messages.success(request, 'Consumption removed and quantity restored.')
     return redirect('inventory:repair_detail', pk=repair_pk)
+
+
+# --- Equipment ---------------------------------------------------------
+
+class EquipmentListView(ListView):
+    model = Equipment
+    template_name = 'inventory/equipment_list.html'
+    context_object_name = 'equipment_list'
+
+    def get_queryset(self):
+        return Equipment.objects.select_related('catalog', 'variant', 'location')
+
+
+class EquipmentCreateView(CreateView):
+    model = Equipment
+    form_class = EquipmentForm
+    template_name = 'inventory/equipment_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:equipment_detail', args=[self.object.pk])
+
+
+class EquipmentDetailView(DetailView):
+    model = Equipment
+    template_name = 'inventory/equipment_detail.html'
+    context_object_name = 'equipment'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['jobs'] = self.object.jobs.all()
+        return context
+
+
+class EquipmentUpdateView(UpdateView):
+    model = Equipment
+    form_class = EquipmentForm
+    template_name = 'inventory/equipment_form.html'
+
+    def get_success_url(self):
+        return reverse('inventory:equipment_detail', args=[self.object.pk])
+
+
+class EquipmentDeleteView(DeleteView):
+    model = Equipment
+    template_name = 'inventory/equipment_confirm_delete.html'
+    success_url = reverse_lazy('inventory:equipment_list')
 
 
 # --- Vendors -----------------------------------------------------------

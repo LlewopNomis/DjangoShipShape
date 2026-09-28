@@ -4,8 +4,12 @@ from treebeard.forms import movenodeform_factory
 
 from .models import (
     CatalogPart,
+    CatalogPartFitment,
+    CatalogRemarkCode,
     CatalogSection,
     CatalogSource,
+    CatalogVariant,
+    Equipment,
     InventoryItem,
     ItemCategory,
     ItemPhoto,
@@ -170,10 +174,21 @@ class ProposalOptionAdmin(admin.ModelAdmin):
         return obj.unit_price
 
 
+class CatalogVariantInline(admin.TabularInline):
+    model = CatalogVariant
+    extra = 0
+
+
+class CatalogRemarkCodeInline(admin.TabularInline):
+    model = CatalogRemarkCode
+    extra = 0
+
+
 @admin.register(CatalogSource)
 class CatalogSourceAdmin(admin.ModelAdmin):
     list_display = ('name', 'manufacturer', 'model_code', 'created_at')
     search_fields = ('name', 'manufacturer', 'model_code')
+    inlines = [CatalogVariantInline, CatalogRemarkCodeInline]
 
 
 class CatalogPartInline(admin.TabularInline):
@@ -190,11 +205,33 @@ class CatalogSectionAdmin(TreeAdmin):
     inlines = [CatalogPartInline]
 
 
+class CatalogPartFitmentInline(admin.TabularInline):
+    model = CatalogPartFitment
+    extra = 0
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        # Only offer the variants of the part's own catalog.
+        if db_field.name == 'variant' and request.resolver_match.kwargs.get('object_id'):
+            part = CatalogPart.objects.select_related('section').filter(
+                pk=request.resolver_match.kwargs['object_id'],
+            ).first()
+            if part:
+                kwargs['queryset'] = CatalogVariant.objects.filter(catalog_id=part.section.catalog_id)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
 @admin.register(CatalogPart)
 class CatalogPartAdmin(admin.ModelAdmin):
     list_display = ('part_number', 'description', 'section', 'item_no', 'bom_level', 'remarks')
     list_filter = ('section__catalog',)
     search_fields = ('part_number', 'description', 'item_no')
+    inlines = [CatalogPartFitmentInline]
+
+
+@admin.register(Equipment)
+class EquipmentAdmin(admin.ModelAdmin):
+    list_display = ('name', 'catalog', 'variant', 'serial', 'location')
+    search_fields = ('name', 'serial')
 
 
 class RfqLineInline(admin.TabularInline):
