@@ -15,6 +15,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
+from .fitment import FITS, OTHER_BUILD, UNKNOWN, fitment_for, identifier_key
 from .forms import PartRequirementForm
 from .models import (
     CatalogPart, CatalogPartFitment, CatalogSection, CatalogSource, CatalogVariant, Equipment, InventoryItem, ItemPhoto, Job, Location, LocationPhoto,
@@ -370,3 +371,64 @@ class EquipmentTests(TestCase):
         with self.assertRaises(ValidationError):
             CatalogPartFitment(part=part, variant=self.other_variant).full_clean()
         CatalogPartFitment(part=part, variant=self.variant, quantity=2, to_identifier='E25002').full_clean()
+
+
+class FitmentTests(TestCase):
+    """fitment_for() against a slice of Fig.28 of the Yanmar 4JH3E manual,
+    as worked out by hand for engine E23123 (a 4JH3E, variant A)."""
+
+    def setUp(self):
+        self.catalog = CatalogSource.objects.create(name='Yanmar 4JH3E', file='catalogs/4jh3e.pdf')
+        self.a = CatalogVariant.objects.create(catalog=self.catalog, code='A', name='4JH3E')
+        self.c = CatalogVariant.objects.create(catalog=self.catalog, code='C', name='4JH3CE1')
+        self.fig = CatalogSection.add_root(catalog=self.catalog, name='COOLING FRESH WATER COOLER', fig_number='28')
+        self.engine = Equipment.objects.create(name='Main engine', catalog=self.catalog, variant=self.a, serial='E23123')
+
+    def part(self, item_no, *fitments):
+        part = CatalogPart.objects.create(section=self.fig, item_no=item_no, part_number=f'P-{item_no}')
+        for variant, quantity, start, end in fitments:
+            CatalogPartFitment.objects.create(
+                part=part, variant=variant, quantity=quantity, from_identifier=start, to_identifier=end,
+            )
+        return part
+
+    def test_original_and_updated_builds_either_side_of_the_change(self):
+        o_ring = self.part('22', (self.a, 2, '', 'E25002'))
+        o_ring_new = self.part('22-1', (self.a, 2, 'E25003', ''))
+        fit = fitment_for(o_ring, self.engine)
+        self.assertEqual((fit.status, fit.quantity), (FITS, 2))
+        self.assertEqual(fitment_for(o_ring_new, self.engine).status, OTHER_BUILD)
+        self.assertEqual(fitment_for(o_ring_new, self.engine).reason, 'from E25003')
+
+    def test_open_ended_row_fits_any_serial(self):
+        seal = self.part('14', (self.a, 1, '', ''))
+        self.assertEqual(fitment_for(seal, self.engine).status, FITS)
+
+    def test_variant_with_no_row_is_not_used(self):
+        cock = self.part('16', (self.c, 1, '', ''))
+        fit = fitment_for(cock, self.engine)
+        self.assertEqual((fit.status, fit.reason), (OTHER_BUILD, 'not used on 4JH3E'))
+
+    def test_serials_compare_numerically_and_ignore_punctuation(self):
+        self.assertLess(identifier_key('E9999'), identifier_key('E10000'))
+        self.assertEqual(identifier_key('E/#23803'), identifier_key('E23803'))
+        self.engine.serial = 'E9999'
+        part = self.part('1', (self.a, 1, '', 'E10000'))
+        self.assertEqual(fitment_for(part, self.engine).status, FITS)
+
+    def test_unknown_when_it_cannot_tell(self):
+        part = self.part('22-1', (self.a, 2, 'E25003', ''))
+        self.assertEqual(fitment_for(self.part('99'), self.engine).status, UNKNOWN)  # no fitment data
+        self.engine.serial = ''
+        self.assertEqual(fitment_for(part, self.engine).reason, 'depends on serial (from E25003)')
+        self.engine.serial = '23123'  # typed without its E: don't guess
+        self.assertEqual(fitment_for(part, self.engine).status, UNKNOWN)
+        self.engine.variant = None
+        self.assertEqual(fitment_for(part, self.engine).status, UNKNOWN)
+
+    def test_prefetched_fitments_avoid_a_query_per_part(self):
+        for item_no in ('22', '22-1', '23'):
+            self.part(item_no, (self.a, 2, '', ''))
+        parts = CatalogPart.objects.select_related('section').prefetch_related('fitments')
+        with self.assertNumQueries(2):
+            [fitment_for(p, self.engine) for p in parts]

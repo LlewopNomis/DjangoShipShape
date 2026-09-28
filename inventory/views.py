@@ -1,4 +1,3 @@
-import re
 from decimal import Decimal
 from urllib.parse import urlencode
 
@@ -58,6 +57,7 @@ from .models import (
     Vendor,
     format_quantity,
 )
+from .utils import natural_key
 
 
 def total_value_expr():
@@ -86,14 +86,6 @@ CATALOG_PART_SORT_FIELDS = {
     'part_number': 'part_number',
     'description': 'description',
 }
-
-
-def natural_key(value):
-    """Sort key that orders embedded numbers numerically, so catalog item/fig
-    numbers like '9', '14-1', '28' sort as a reader expects rather than as
-    plain strings ('14-1' < '28' < '9')."""
-    return [(0, int(tok), '') if tok.isdigit() else (1, 0, tok.lower())
-            for tok in re.findall(r'\d+|\D+', value or '')]
 
 
 # Sortable columns on a job's requirements table. Sorted in Python (a job
