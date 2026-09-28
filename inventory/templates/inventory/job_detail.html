@@ -58,18 +58,18 @@
     {% if requirements %}
         <p class="text-muted small mb-1">
             Shift-click a column header to sort by it next (click again to reverse, a third time to remove).
-            {% if sort %}<a href="?{% if vendor_filter %}vendor={{ vendor_filter|urlencode }}{% endif %}">Clear sort</a>{% endif %}
+            {% if sort %}<a href="?{% if vendor_filter %}vendor={{ vendor_filter|urlencode }}{% endif %}">Reset to default sort</a>{% endif %}
         </p>
         <div class="table-responsive mb-3">
             <table class="table table-sm table-hover align-middle">
                 <thead>
                     <tr>
                         <th>{% multi_sort_header 'description' 'Description' %}</th>
-                        <th>{% multi_sort_header 'part_number' 'Part number' %}</th>
-                        <th>{% multi_sort_header 'item_no' 'No.' %}</th>
                         <th>{% multi_sort_header 'fig' 'Fig' %}</th>
+                        <th>{% multi_sort_header 'item_no' 'No.' %}</th>
+                        <th>{% multi_sort_header 'part_number' 'Part number' %}</th>
                         <th>{% multi_sort_header 'category' 'Category' %}</th>
-                        <th class="text-nowrap">{% multi_sort_header 'needed' 'Need / ordered' %}</th>
+                        <th class="text-nowrap">{% multi_sort_header 'needed' 'Needed / ordered' %}</th>
                         <th>Status</th>
                         <th>{% multi_sort_header 'vendor' 'RFQ vendor' %}</th>
                     </tr>
@@ -79,8 +79,6 @@
                         {% with cp=req.catalog_part %}
                         <tr>
                             <td><a href="{% url 'inventory:requirement_detail' req.pk %}">{{ req.name }}</a></td>
-                            <td class="text-nowrap">{{ req.part_number }}</td>
-                            <td class="text-nowrap">{% if cp.item_no %}{{ cp.item_no }}{% endif %}</td>
                             <td>
                                 {% if cp %}
                                     <a href="{% url 'inventory:catalog_section_detail' cp.section.pk %}" class="text-reset" title="{{ cp.section.catalog.name }}">
@@ -88,6 +86,8 @@
                                     {% if cp.section.page_number %}<span class="text-muted small text-nowrap">p.{{ cp.section.page_number }}</span>{% endif %}
                                 {% endif %}
                             </td>
+                            <td class="text-nowrap">{% if cp.item_no %}{{ cp.item_no }}{% endif %}</td>
+                            <td class="text-nowrap">{{ req.part_number }}</td>
                             <td>{{ req.category|default:"" }}</td>
                             <td class="text-nowrap">{{ req.quantity_needed|qty }}{% if req.unit %} {{ req.unit }}{% endif %} / {{ req.ordered_quantity|qty }}</td>
                             <td>

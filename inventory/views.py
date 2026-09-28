@@ -109,6 +109,8 @@ REQUIREMENT_SORT_KEYS = {
     'needed': lambda r: r.quantity_needed,
     'vendor': lambda r: natural_key(r.rfq_vendor.name if r.rfq_vendor else ''),
 }
+# Used when no ?sort= is given: the manual's own order, figure by figure.
+REQUIREMENT_DEFAULT_SORT = 'fig,item_no,part_number'
 
 
 def sort_requirements(requirements, sort):
@@ -917,8 +919,10 @@ class JobDetailView(DetailView):
         elif vendor_filter:
             requirements = requirements.filter(rfq_vendor_id=vendor_filter)
         sort = self.request.GET.get('sort', '')
-        context['requirements'] = sort_requirements(requirements, sort)
+        effective_sort = sort or REQUIREMENT_DEFAULT_SORT
+        context['requirements'] = sort_requirements(requirements, effective_sort)
         context['sort'] = sort
+        context['effective_sort'] = effective_sort
         context['requirement_form'] = PartRequirementForm()
         context['vendor_filter'] = vendor_filter
         context['assigned_vendors'] = Vendor.objects.filter(

@@ -57,9 +57,12 @@ def multi_sort_header(context, field, label):
     column alone (toggling direction if it already is the only sort); the
     data-sort-add URL, followed on shift-click, instead cycles this column
     within the list: add as the last tie-breaker -> flip to descending ->
-    remove. Shows the column's position in the list when there's more than one."""
+    remove. Shows the column's position in the list when there's more than one.
+    If the view sets 'effective_sort' (a default applied when ?sort= is
+    absent), that is what the headers show and build on."""
     request = context['request']
-    terms = [t for t in request.GET.get('sort', '').split(',') if t]
+    current = context.get('effective_sort') or request.GET.get('sort', '')
+    terms = [t for t in current.split(',') if t]
     fields = [t.lstrip('-') for t in terms]
 
     def url(new_terms):
