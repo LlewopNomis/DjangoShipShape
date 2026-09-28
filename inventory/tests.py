@@ -14,9 +14,12 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
+from .forms import PartRequirementForm
 from .models import (
-    CatalogSource, InventoryItem, ItemPhoto, Location, LocationPhoto, Repair, RepairPhoto, Spare, SparePhoto,
+    CatalogPart, CatalogSection, CatalogSource, InventoryItem, ItemPhoto, Job, Location, LocationPhoto,
+    PartRequirement, Repair, RepairPhoto, Spare, SparePhoto,
 )
+from .templatetags.inventory_extras import catalog_part_field
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp()
 
@@ -274,3 +277,51 @@ class ProductionSettingsTests(TestCase):
     def test_debug_off_with_a_real_key_starts(self):
         result = self.import_settings(DJANGO_DEBUG='0', DJANGO_SECRET_KEY='x' * 50, DJANGO_ALLOWED_HOSTS='ionos-vps')
         self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class CatalogPartPickerTests(TestCase):
+    """The catalog part picker matches on label text, so two BOM lines with
+    the same part number and description in one fig (e.g. No.14 and its
+    discontinued No.14-1) must still get different labels."""
+
+    def setUp(self):
+        self.client.force_login(get_user_model().objects.create_user('simon', password='pw'))
+        catalog = CatalogSource.objects.create(name='Yanmar 4JH3E', file='catalogs/4jh3e.pdf')
+        fig = CatalogSection.add_root(catalog=catalog, name='COOLING FRESH WATER COOLER', fig_number='28')
+        self.current = CatalogPart.objects.create(
+            section=fig, item_no='14', part_number='129270-44490', description='SEAL', remarks='W',
+        )
+        self.discontinued = CatalogPart.objects.create(
+            section=fig, item_no='14-1', part_number='129270-44490', description='SEAL', remarks='Z',
+        )
+
+    def labels(self):
+        return {o['id']: o['label'] for o in catalog_part_field(PartRequirementForm()['catalog_part'])['options']}
+
+    def test_labels_include_fig_item_no_and_remark(self):
+        labels = self.labels()
+        self.assertEqual(
+            labels[self.current.pk],
+            '129270-44490 — SEAL · No.14 · W · Fig.28 COOLING FRESH WATER COOLER · Yanmar 4JH3E',
+        )
+        self.assertEqual(
+            labels[self.discontinued.pk],
+            '129270-44490 — SEAL · No.14-1 · Z · Fig.28 COOLING FRESH WATER COOLER · Yanmar 4JH3E',
+        )
+
+    def test_labels_stay_unique_when_lines_are_identical(self):
+        CatalogPart.objects.filter(pk=self.discontinued.pk).update(item_no='14', remarks='W')
+        labels = self.labels()
+        self.assertEqual(len(set(labels.values())), 2)
+        self.assertTrue(labels[self.discontinued.pk].endswith(f' #{self.discontinued.pk}'))
+
+    def test_editing_a_requirement_links_the_chosen_line(self):
+        requirement = PartRequirement.objects.create(
+            job=Job.objects.create(title='Heat exchanger'), name='SEAL', catalog_part=self.discontinued,
+        )
+        self.client.post(reverse('inventory:requirement_edit', args=[requirement.pk]), {
+            'name': 'SEAL', 'part_number': '129270-44490', 'quantity_needed': '1',
+            'catalog_part': self.current.pk,
+        })
+        requirement.refresh_from_db()
+        self.assertEqual(requirement.catalog_part, self.current)

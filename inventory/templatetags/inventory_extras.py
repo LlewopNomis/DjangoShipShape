@@ -159,10 +159,16 @@ def catalog_part_field(field):
     since that's what's actually printed on the requirement/item you're filling
     in from. See _catalog_part_field.html for the matching logic."""
     model_field = field.field
-    options = [
-        {'id': obj.pk, 'label': model_field.label_from_instance(obj), 'part_number': obj.part_number}
-        for obj in model_field.queryset
-    ]
+    options = []
+    seen_labels = set()
+    for obj in model_field.queryset:
+        label = model_field.label_from_instance(obj)
+        # The picker maps label -> id, so labels must be unique; should two
+        # lines ever still read the same, tell the later one apart by id.
+        if label in seen_labels:
+            label = f'{label} #{obj.pk}'
+        seen_labels.add(label)
+        options.append({'id': obj.pk, 'label': label, 'part_number': obj.part_number})
     selected_label = ''
     selected_id = field.value()
     if selected_id:

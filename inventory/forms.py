@@ -88,17 +88,30 @@ class ItemCategoryEditForm(BootstrapFormMixin, forms.ModelForm):
 
 
 class CatalogPartChoiceField(forms.ModelChoiceField):
-    """Shows the part number, description and which fig/catalog it comes
-    from, right in the dropdown — a catalog part number alone isn't enough
-    to place it."""
+    """Shows the part number, description, fig, item No., remark flag and
+    catalog, right in the dropdown — a catalog part number alone isn't enough
+    to place it. The picker matches on this label, so it has to tell apart
+    lines that repeat a part number within one fig (e.g. No.14 vs a
+    discontinued No.14-1 flagged 'Z')."""
 
     def label_from_instance(self, obj):
-        label = f'{obj.part_number} — {obj.description}' if obj.description else obj.part_number
-        return f'{label} ({obj.section.catalog.name}, {obj.section.name})'
+        section = obj.section
+        fig = f'Fig.{section.fig_number} {section.name}' if section.fig_number else section.name
+        # No. and remark straight after the description: they're what tells
+        # repeated lines apart, and the rest gets cut off in a narrow box.
+        parts = [
+            f'{obj.part_number} — {obj.description}' if obj.description else obj.part_number,
+            f'No.{obj.item_no}' if obj.item_no else '',
+            obj.remarks,
+            fig,
+            section.catalog.name,
+        ]
+        return ' · '.join(p for p in parts if p)
 
 
 def catalog_part_queryset():
-    return CatalogPart.objects.select_related('section', 'section__catalog').order_by('part_number')
+    # id follows the manual's own line order, so No.14 lists before No.14-1.
+    return CatalogPart.objects.select_related('section', 'section__catalog').order_by('part_number', 'id')
 
 
 class InventoryItemForm(BootstrapFormMixin, forms.ModelForm):
