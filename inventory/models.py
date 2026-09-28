@@ -732,6 +732,13 @@ class CatalogPartFitment(models.Model):
     variant with no row doesn't use the part. Identifiers are free text,
     compared in natural order (E9999 < E10000); blank = open-ended."""
 
+    SOURCE_IMPORT = 'import'
+    SOURCE_MANUAL = 'manual'
+    SOURCE_CHOICES = [
+        (SOURCE_IMPORT, 'Imported from the catalog'),
+        (SOURCE_MANUAL, 'Entered by hand'),
+    ]
+
     part = models.ForeignKey(CatalogPart, on_delete=models.CASCADE, related_name='fitments')
     variant = models.ForeignKey(CatalogVariant, on_delete=models.CASCADE, related_name='fitments')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -742,6 +749,10 @@ class CatalogPartFitment(models.Model):
     to_identifier = models.CharField(
         max_length=50, blank=True,
         help_text='Last serial/hull number (or year) this applies to. Blank = no end.',
+    )
+    source = models.CharField(
+        max_length=10, choices=SOURCE_CHOICES, default=SOURCE_MANUAL,
+        help_text='Re-importing a catalog replaces only its own imported rows, never hand-entered ones.',
     )
 
     class Meta:

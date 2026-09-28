@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.db import transaction
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
@@ -21,6 +22,7 @@ from .models import (
     CatalogPart, CatalogPartFitment, CatalogSection, CatalogSource, CatalogVariant, Equipment, InventoryItem, ItemPhoto, Job, Location, LocationPhoto,
     PartRequirement, Repair, RepairPhoto, Spare, SparePhoto,
 )
+from .management.commands.import_catalog import Command as ImportCatalogCommand
 from .templatetags.inventory_extras import catalog_part_field
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp()
@@ -432,3 +434,83 @@ class FitmentTests(TestCase):
         parts = CatalogPart.objects.select_related('section').prefetch_related('fitments')
         with self.assertNumQueries(2):
             [fitment_for(p, self.engine) for p in parts]
+
+
+class ImportCatalogFitmentTests(TestCase):
+    """The importer on real -layout text from Fig.28 of the Yanmar 4JH3E
+    manual (inventory/test_data_fig28.txt), checked against the answers
+    worked out by hand for engine E23123."""
+
+    def setUp(self):
+        with open(os.path.join(os.path.dirname(__file__), 'test_data_fig28.txt')) as f:
+            self.text = f.read()
+        self.catalog = CatalogSource.objects.create(name='Yanmar 4JH3E', file='catalogs/4jh3e.pdf')
+
+    def run_import(self, dry_run=False):
+        out = io.StringIO()
+        command = ImportCatalogCommand(stdout=out)
+        with transaction.atomic():
+            command.import_text(self.text, 'unused.pdf', {
+                'name': 'Yanmar 4JH3E', 'manufacturer': '', 'model_code': '', 'dry_run': dry_run,
+            })
+            if dry_run:
+                transaction.set_rollback(True)
+        return out.getvalue()
+
+    def engine(self, serial='E23123'):
+        return Equipment(name='Main engine', catalog=self.catalog, serial=serial,
+                         variant=CatalogVariant.objects.get(catalog=self.catalog, code='A'))
+
+    def fit(self, item_no, serial='E23123'):
+        return fitment_for(CatalogPart.objects.get(item_no=item_no), self.engine(serial))
+
+    def test_variants_and_remark_codes_come_from_the_page(self):
+        self.run_import()
+        self.assertEqual(
+            list(self.catalog.variants.values_list('code', 'name')),
+            [('A', '4JH3E'), ('B', '4JH3CE'), ('C', '4JH3CE1'), ('D', '4JH3-TE'), ('E', '4JH3-TCE')],
+        )
+        self.assertIn('Not interchangeable', self.catalog.remark_codes.get(code='S').meaning)
+
+    def test_original_build_parts_fit_e23123_and_updated_ones_do_not(self):
+        self.run_import()
+        o_ring = self.fit('22')
+        self.assertEqual((o_ring.status, o_ring.quantity), (FITS, 2))
+        self.assertEqual((self.fit('22-1').status, self.fit('22-1').reason), (OTHER_BUILD, 'from E25003'))
+        self.assertEqual(self.fit('13').status, FITS)
+        self.assertEqual(self.fit('13-1').status, OTHER_BUILD)
+        self.assertEqual(self.fit('18').status, FITS)  # Z: dropped at E25003
+        self.assertEqual(self.fit('18', serial='E25003').status, OTHER_BUILD)
+
+    def test_n_coded_replacement_fits_older_engines_too(self):
+        self.run_import()
+        self.assertEqual((self.fit('16').status, self.fit('16').reason), (OTHER_BUILD, 'up to E21538'))
+        self.assertEqual(self.fit('16-1').status, FITS)
+        self.assertEqual(self.fit('16-1', serial='E20000').status, FITS)
+        # Item 16 has no C or E quantity: those engines never used it.
+        self.assertEqual(
+            set(CatalogPart.objects.get(item_no='16').fitments.values_list('variant__code', flat=True)),
+            {'A', 'B', 'D'},
+        )
+
+    def test_reimport_updates_in_place_and_keeps_hand_entered_data(self):
+        self.run_import()
+        o_ring = CatalogPart.objects.get(item_no='22')
+        variant_a = CatalogVariant.objects.get(catalog=self.catalog, code='A')
+        variant_a.name = 'My 4JH3E'
+        variant_a.save()
+        CatalogPartFitment.objects.create(part=o_ring, variant=variant_a, quantity=3, source=CatalogPartFitment.SOURCE_MANUAL)
+        imported = o_ring.fitments.filter(source=CatalogPartFitment.SOURCE_IMPORT).count()
+
+        out = self.run_import()
+
+        self.assertEqual(CatalogPart.objects.get(item_no='22').pk, o_ring.pk)
+        self.assertEqual(CatalogVariant.objects.get(pk=variant_a.pk).name, 'My 4JH3E')
+        self.assertIn('Variant A is "My 4JH3E" here but "4JH3E" in the manual', out)
+        self.assertEqual(o_ring.fitments.filter(source=CatalogPartFitment.SOURCE_MANUAL).count(), 1)
+        self.assertEqual(o_ring.fitments.filter(source=CatalogPartFitment.SOURCE_IMPORT).count(), imported)
+
+    def test_dry_run_saves_nothing(self):
+        self.run_import(dry_run=True)
+        self.assertFalse(CatalogPart.objects.exists())
+        self.assertFalse(self.catalog.variants.exists())

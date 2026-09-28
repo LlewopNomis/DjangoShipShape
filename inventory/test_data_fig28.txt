@@ -1,0 +1,22 @@
+0CR10-M46701   4JH3E(CE/CE1)-TE(TCE)                                                                                                  0CR10-M46701       Fig.28
+                                                                                                    (A)=4JH3E                         (D)=4JH3-TE
+Fig.28. COOLING FRESH WATER COOLER                                                                  (B)=4JH3CE                        (E)=4JH3-TCE
+                                                                                                    (C)=4JH3CE1                       (F)=
+                                        No.      Lev.        Parts No.                    Description                                    Q'ty                 I   R
+                                                                                                                        (A)     (B)   (C) (D)     (E)   (F)
+                                         1        1     129670-44900      COOLER ASSY, WATER                             1       1     1      1    1
+                                         13       2     129670-44400      CORE ASSY, COOLER                              1       1    1     1     1
+                                        13-1      2     129473-44111      CORE ASSY, COOLER                              1       1    1     1     1           S
+                                                (A=E25003)         (B=E25003)        (C=E25003)          (D=E12191)          (E=E12191)
+                                         14       3     129270-44490      SEAL                                           1       1    1     1     1           W
+                                               (A=FROM 1ST)       (B=FROM 1ST)    (C=FROM 1ST)          (D=FROM 1ST)     (E=FROM 1ST)
+                                        14-1      3     129270-44490      SEAL                                           1       1    1     1     1           Z
+                                                (A=E25003)         (B=E25003)        (C=E25003)          (D=E12191)          (E=E12191)
+                                         16       2     120130-49350      COCK, 1/4                                      1       1          1
+                                        16-1      2     119620-49290      COCK ASSY, 1/4                                 1       1    1     1     1           N
+                                                (A=E21539)         (B=E21539)                            (D=E10233)
+                                         18       2     23871-030000      PLUG, R03                                      1       1    1     1     1           Z
+                                                (A=E25003)         (B=E25003)        (C=E25003)          (D=E12191)          (E=E12191)
+                                         22       2     24321-000800      O-RING, 1AG80.0                                2       2    2     2     2
+                                        22-1      2     24321-000750      O-RING, 1AG75.0                                2       2    2     2     2           S
+                                                (A=E25003)         (B=E25003)        (C=E25003)          (D=E12191)          (E=E12191)
