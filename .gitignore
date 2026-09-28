@@ -5,3 +5,6 @@ db.sqlite3
 media/
 .idea/
 staticfiles/
+
+# Private planning notes and draft content (not for the public repo)
+plans/
