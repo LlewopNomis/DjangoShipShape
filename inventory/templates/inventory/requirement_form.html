@@ -7,7 +7,7 @@
         {% csrf_token %}
         {% for field in form %}
             {% if field.name == 'catalog_part' %}
-                {% catalog_part_field field %}
+                {% catalog_part_field field object.job.equipment %}
             {% else %}
                 <div class="mb-3">
                     <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>

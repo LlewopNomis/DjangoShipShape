@@ -57,6 +57,7 @@ from .models import (
     Vendor,
     format_quantity,
 )
+from .fitment import fitment_for
 from .utils import natural_key
 
 
@@ -946,12 +947,15 @@ class JobDetailView(DetailView):
     template_name = 'inventory/job_detail.html'
     context_object_name = 'job'
 
+    def get_queryset(self):
+        return Job.objects.select_related('location', 'equipment__variant')
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         requirements = (
             self.object.requirements
             .select_related('category', 'unit', 'rfq_vendor', 'catalog_part__section__catalog')
-            .prefetch_related('options')
+            .prefetch_related('options', 'catalog_part__fitments')
         )
         vendor_filter = self.request.GET.get('vendor', '')
         if vendor_filter == 'none':
@@ -961,6 +965,11 @@ class JobDetailView(DetailView):
         sort = self.request.GET.get('sort', '')
         effective_sort = sort or REQUIREMENT_DEFAULT_SORT
         context['requirements'] = sort_requirements(requirements, effective_sort)
+        equipment = self.object.equipment
+        if equipment is not None and equipment.variant_id:
+            for req in context['requirements']:
+                req.fit = fitment_for(req.catalog_part, equipment) if req.catalog_part else None
+        context['equipment'] = equipment
         context['sort'] = sort
         context['effective_sort'] = effective_sort
         context['requirement_form'] = PartRequirementForm()
@@ -1011,11 +1020,16 @@ class RequirementDetailView(DetailView):
 
     def get_queryset(self):
         return PartRequirement.objects.select_related(
-            'job', 'category', 'unit', 'catalog_part', 'catalog_part__section', 'catalog_part__section__catalog',
+            'job', 'job__equipment__variant', 'category', 'unit',
+            'catalog_part', 'catalog_part__section', 'catalog_part__section__catalog',
         )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        equipment = self.object.job.equipment
+        if equipment is not None and equipment.variant_id and self.object.catalog_part:
+            context['equipment'] = equipment
+            context['fit'] = fitment_for(self.object.catalog_part, equipment)
         context['options'] = self.object.options.select_related('vendor')
         context['option_form'] = ProposalOptionForm()
         return context
@@ -1194,7 +1208,27 @@ class CatalogSectionDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         sort = self.request.GET.get('sort', '')
-        context['parts'] = apply_sort(self.object.parts.all(), sort, CATALOG_PART_SORT_FIELDS, default='id')
+        parts = list(apply_sort(
+            self.object.parts.select_related('section').prefetch_related('fitments'),
+            sort, CATALOG_PART_SORT_FIELDS, default='id',
+        ))
+        # Check the parts against a piece of equipment from this catalog: the
+        # one picked (?equipment=<id>, or 'none' to switch off), else the first.
+        equipment_choices = list(
+            Equipment.objects.filter(catalog=self.object.catalog, variant__isnull=False).select_related('variant')
+        )
+        picked = self.request.GET.get('equipment', '')
+        equipment = None if picked == 'none' else next(
+            (e for e in equipment_choices if str(e.pk) == picked),
+            equipment_choices[0] if equipment_choices else None,
+        )
+        remark_meanings = dict(self.object.catalog.remark_codes.values_list('code', 'meaning'))
+        for part in parts:
+            part.remark_meaning = remark_meanings.get(part.remarks, '')
+            part.fit = fitment_for(part, equipment) if equipment else None
+        context['parts'] = parts
+        context['equipment'] = equipment
+        context['equipment_choices'] = equipment_choices
         context['sort'] = sort
         context['ancestors'] = self.object.get_ancestors()
         context['children'] = self.object.get_children()

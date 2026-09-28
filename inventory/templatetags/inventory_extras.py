@@ -2,6 +2,7 @@ from django import template
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
+from inventory.fitment import FITS, OTHER_BUILD, fitment_for
 from inventory.models import format_quantity
 
 register = template.Library()
@@ -150,25 +151,80 @@ def tree_list(nodes, detail_url_name, branch_icon='📁', leaf_icon='📦', defa
     }
 
 
+def fit_text(fit, equipment):
+    """Plain-English fit status, e.g. 'Other build for Main engine (E23123): from E25003'."""
+    who = f'{equipment.name} ({equipment.serial})' if equipment.serial else equipment.name
+    if fit.status == FITS:
+        qty = f', qty {format_quantity(fit.quantity)}' if fit.quantity is not None else ''
+        return f'Fits {who}{": " + fit.reason if fit.reason else ""}{qty}'
+    if fit.status == OTHER_BUILD:
+        return f'Other build for {who}: {fit.reason}'
+    return f'Not sure it fits {who}: {fit.reason}'
+
+
+@register.simple_tag
+def fit_badge(fit, equipment):
+    """✓ / ✗ / ? after a catalog part, with the reason on hover (and for
+    screen readers). Empty when there's nothing to check against."""
+    if fit is None or equipment is None:
+        return ''
+    symbol, colour = {FITS: ('✓', 'text-success'), OTHER_BUILD: ('✗', 'text-danger')}.get(
+        fit.status, ('?', 'text-muted'),
+    )
+    text = fit_text(fit, equipment)
+    return format_html(
+        '<span class="fit-badge {}" title="{}" aria-hidden="true">{}</span><span class="visually-hidden">{}</span>',
+        colour, text, symbol, text,
+    )
+
+
+@register.simple_tag
+def fit_status(fit, equipment):
+    """The fit spelled out as a line of text, e.g. on the requirement page."""
+    colour = {FITS: 'text-success', OTHER_BUILD: 'text-danger'}.get(fit.status, 'text-muted')
+    symbol = {FITS: '✓', OTHER_BUILD: '✗'}.get(fit.status, '?')
+    return format_html('<p class="small fw-semibold mb-0 {}">{} {}</p>', colour, symbol, fit_text(fit, equipment))
+
+
+_FIT_ORDER = {FITS: 0, OTHER_BUILD: 2}
+
+
 @register.inclusion_tag('inventory/_catalog_part_field.html')
-def catalog_part_field(field):
+def catalog_part_field(field, equipment=None):
     """Renders a CatalogPartChoiceField (hidden ModelChoiceField widget) as a
     type-to-search box instead of a giant <select> — with 2000+ catalog parts,
     scrolling a dropdown to find one is unworkable, and matching by pasting a
     bare part number (with no description/section attached) needs to work too,
     since that's what's actually printed on the requirement/item you're filling
-    in from. See _catalog_part_field.html for the matching logic."""
+    in from. See _catalog_part_field.html for the matching logic. Given the
+    equipment it's for (e.g. the job's engine), each part is marked ✓ / ✗
+    against it, fitting parts listed first."""
     model_field = field.field
+    queryset = model_field.queryset
+    if equipment is not None and equipment.variant_id:
+        queryset = queryset.prefetch_related('fitments')
+    else:
+        equipment = None
     options = []
     seen_labels = set()
-    for obj in model_field.queryset:
+    for obj in queryset:
         label = model_field.label_from_instance(obj)
+        option = {'id': obj.pk, 'part_number': obj.part_number, 'rank': 1, 'fit': ''}
+        if equipment is not None:
+            # Flag, never hide: the boat may not match its book.
+            fit = fitment_for(obj, equipment)
+            option['rank'] = _FIT_ORDER.get(fit.status, 1)
+            option['fit'] = fit_text(fit, equipment)
+            label = {FITS: f'✓ {label}', OTHER_BUILD: f'✗ {label}'}.get(fit.status, label)
         # The picker maps label -> id, so labels must be unique; should two
         # lines ever still read the same, tell the later one apart by id.
         if label in seen_labels:
             label = f'{label} #{obj.pk}'
         seen_labels.add(label)
-        options.append({'id': obj.pk, 'label': label, 'part_number': obj.part_number})
+        option['label'] = label
+        options.append(option)
+    # Parts that fit first, then can't-tell, then other builds.
+    options.sort(key=lambda o: o['rank'])
     selected_label = ''
     selected_id = field.value()
     if selected_id:
@@ -178,6 +234,7 @@ def catalog_part_field(field):
     return {
         'field': field,
         'options': options,
+        'equipment': equipment,
         'selected_label': selected_label,
         'data_id': f'{field.html_name}-catalog-part-data',
     }

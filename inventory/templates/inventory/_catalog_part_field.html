@@ -8,6 +8,7 @@
         {% for opt in options %}<option value="{{ opt.label }}">{% endfor %}
     </datalist>
     {{ field }}
+    {% if equipment %}<div class="small fw-semibold mt-1" id="{{ field.id_for_label }}_fit" aria-live="polite"></div>{% endif %}
     <div class="form-text">Type or paste a part number, or a bit of the description — pick a suggestion, or leave it matched automatically if only one part has that number.</div>
     {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
 </div>
@@ -16,13 +17,26 @@
     (function () {
         var data = JSON.parse(document.getElementById('{{ data_id }}').textContent);
         var labelToId = {};
+        var idToOption = {};
         var partNumberToMatches = {};
         data.forEach(function (opt) {
             labelToId[opt.label] = opt.id;
+            idToOption[opt.id] = opt;
             (partNumberToMatches[opt.part_number] = partNumberToMatches[opt.part_number] || []).push(opt);
         });
         var search = document.getElementById('{{ field.id_for_label }}_search');
         var hidden = document.getElementById('{{ field.id_for_label }}');
+        var fitLine = document.getElementById('{{ field.id_for_label }}_fit');
+
+        function showFit() {
+            // Spell out the chosen part's ✓/✗ — on a phone the box cuts the label short.
+            if (!fitLine) return;
+            var opt = idToOption[hidden.value];
+            fitLine.textContent = opt ? opt.fit : '';
+            fitLine.className = 'small fw-semibold mt-1 ' + (
+                !opt ? '' : opt.rank === 0 ? 'text-success' : opt.rank === 2 ? 'text-danger' : 'text-muted'
+            );
+        }
 
         function resolve() {
             var value = search.value.trim();
@@ -46,7 +60,9 @@
             hidden.value = '';
         }
 
-        search.addEventListener('input', resolve);
-        search.addEventListener('blur', resolve);
+        function update() { resolve(); showFit(); }
+        search.addEventListener('input', update);
+        search.addEventListener('blur', update);
+        showFit();
     })();
 </script>

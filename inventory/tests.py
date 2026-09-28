@@ -436,10 +436,9 @@ class FitmentTests(TestCase):
             [fitment_for(p, self.engine) for p in parts]
 
 
-class ImportCatalogFitmentTests(TestCase):
-    """The importer on real -layout text from Fig.28 of the Yanmar 4JH3E
-    manual (inventory/test_data_fig28.txt), checked against the answers
-    worked out by hand for engine E23123."""
+class Fig28ImportMixin:
+    """Imports real -layout text from Fig.28 of the Yanmar 4JH3E manual
+    (inventory/test_data_fig28.txt)."""
 
     def setUp(self):
         with open(os.path.join(os.path.dirname(__file__), 'test_data_fig28.txt')) as f:
@@ -456,6 +455,11 @@ class ImportCatalogFitmentTests(TestCase):
             if dry_run:
                 transaction.set_rollback(True)
         return out.getvalue()
+
+
+class ImportCatalogFitmentTests(Fig28ImportMixin, TestCase):
+    """The importer on Fig.28, checked against the answers worked out by
+    hand for engine E23123."""
 
     def engine(self, serial='E23123'):
         return Equipment(name='Main engine', catalog=self.catalog, serial=serial,
@@ -514,3 +518,56 @@ class ImportCatalogFitmentTests(TestCase):
         self.run_import(dry_run=True)
         self.assertFalse(CatalogPart.objects.exists())
         self.assertFalse(self.catalog.variants.exists())
+
+
+class FitMarksTests(Fig28ImportMixin, TestCase):
+    """The ✓ / ✗ marks on the job table, requirement page, part picker and
+    catalog section page, for the heat exchanger job on engine E23123."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(get_user_model().objects.create_user('simon', password='pw'))
+        self.run_import()
+        self.engine = Equipment.objects.create(
+            name='Main engine', catalog=self.catalog, serial='E23123',
+            variant=CatalogVariant.objects.get(catalog=self.catalog, code='A'),
+        )
+        self.job = Job.objects.create(title='Heat exchanger', equipment=self.engine)
+        self.o_ring = PartRequirement.objects.create(
+            job=self.job, name='O-ring', catalog_part=CatalogPart.objects.get(item_no='22'),
+        )
+        self.cock = PartRequirement.objects.create(
+            job=self.job, name='Cock', catalog_part=CatalogPart.objects.get(item_no='16'),
+        )
+
+    def test_job_table_marks_each_line(self):
+        response = self.client.get(reverse('inventory:job_detail', args=[self.job.pk]))
+        self.assertContains(response, 'Fits Main engine (E23123): up to E25002, qty 2')
+        self.assertContains(response, 'Other build for Main engine (E23123): up to E21538')
+
+    def test_no_marks_without_equipment(self):
+        self.job.equipment = None
+        self.job.save()
+        response = self.client.get(reverse('inventory:job_detail', args=[self.job.pk]))
+        self.assertNotContains(response, 'class="fit-badge')
+
+    def test_requirement_page_spells_out_the_fit(self):
+        response = self.client.get(reverse('inventory:requirement_detail', args=[self.cock.pk]))
+        self.assertContains(response, '✗ Other build for Main engine (E23123): up to E21538')
+
+    def test_picker_marks_parts_and_lists_fitting_ones_first(self):
+        field = PartRequirementForm(instance=self.o_ring)['catalog_part']
+        options = catalog_part_field(field, self.engine)['options']
+        labels = [o['label'] for o in options]
+        self.assertTrue(labels[0].startswith('✓ '))
+        o_ring_new = next(label for label in labels if 'No.22-1' in label)
+        self.assertTrue(o_ring_new.startswith('✗ '))
+        self.assertLess(labels.index(next(label for label in labels if 'No.22 ' in label)), labels.index(o_ring_new))
+
+    def test_section_page_checks_fit_and_explains_remarks(self):
+        fig = CatalogSection.objects.get(fig_number='28')
+        response = self.client.get(reverse('inventory:catalog_section_detail', args=[fig.pk]))
+        self.assertContains(response, 'Other build for Main engine (E23123): from E25003')
+        self.assertContains(response, '<abbr title="Not interchangeable either way')
+        response = self.client.get(reverse('inventory:catalog_section_detail', args=[fig.pk]), {'equipment': 'none'})
+        self.assertNotContains(response, 'class="fit-badge')

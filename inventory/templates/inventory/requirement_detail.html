@@ -28,6 +28,7 @@
                     </a>
                     <span class="text-muted small">({% if requirement.catalog_part.item_no %}No. {{ requirement.catalog_part.item_no }}, {% endif %}{{ requirement.catalog_part.section.catalog.name }}, {{ requirement.catalog_part.section.name }})</span>
                 </p>
+                {% if fit %}{% fit_status fit equipment %}{% endif %}
             {% endif %}
         </div>
         <div class="btn-group">

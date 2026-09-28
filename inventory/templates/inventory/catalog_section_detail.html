@@ -32,7 +32,21 @@
         </div>
     {% endif %}
 
-    <h6>Parts</h6>
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2">
+        <h6 class="mb-0">Parts</h6>
+        {% if equipment_choices %}
+            <form method="get" class="d-flex align-items-center gap-2">
+                {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+                <label class="small text-muted text-nowrap" for="fit-equipment">Check fit for</label>
+                <select id="fit-equipment" name="equipment" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+                    {% for e in equipment_choices %}
+                        <option value="{{ e.pk }}" {% if e == equipment %}selected{% endif %}>{{ e.name }}{% if e.serial %} ({{ e.serial }}){% endif %}</option>
+                    {% endfor %}
+                    <option value="none" {% if not equipment %}selected{% endif %}>— don't check —</option>
+                </select>
+            </form>
+        {% endif %}
+    </div>
     {% if parts %}
         <div class="table-responsive">
             <table class="table table-sm align-middle">
@@ -47,11 +61,11 @@
                 <tbody>
                 {% for part in parts %}
                     <tr id="part-{{ part.pk }}">
-                        <td>{{ part.item_no }}</td>
+                        <td class="text-nowrap">{{ part.item_no }}{% fit_badge part.fit equipment %}</td>
                         <td>{{ part.part_number }}</td>
                         <td>{{ part.description }}</td>
                         <td>{{ part.quantity_note }}</td>
-                        <td>{{ part.remarks }}</td>
+                        <td>{% if part.remark_meaning %}<abbr title="{{ part.remark_meaning }}">{{ part.remarks }}</abbr>{% else %}{{ part.remarks }}{% endif %}</td>
                         <td>
                             {% if section.catalog.file and section.page_number %}
                                 <a href="{{ section.catalog.file.url }}#page={{ section.page_number }}" target="_blank" rel="noopener" class="small">open page</a>
