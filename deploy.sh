@@ -12,6 +12,13 @@ cd "$(dirname "$0")"
 # uv lives here, and it isn't on PATH over a non-interactive ssh.
 export PATH="$HOME/.local/bin:$PATH"
 
+# pdftotext (poppler-utils) is a system package uv can't install; only
+# catalog imports need it, so warn rather than stop the deploy.
+if ! command -v pdftotext >/dev/null; then
+    echo "!!! pdftotext not found: import_catalog won't work until you run"
+    echo "!!!     sudo apt-get install poppler-utils"
+fi
+
 echo "==> Pulling main"
 git pull --ff-only
 

@@ -89,6 +89,15 @@ Settings that differ from a local checkout come from environment variables:
 | `DJANGO_SECRET_KEY` | a long random string — `python -c 'import secrets; print(secrets.token_urlsafe(50))'`. Required when `DJANGO_DEBUG=0`; the app refuses to start with the built-in dev key. |
 | `DJANGO_ALLOWED_HOSTS` | comma-separated hostnames/IPs you'll browse to, e.g. `ionos-vps,100.118.115.74` |
 
+One system package is needed besides what `uv` installs (uv only manages
+Python packages): `pdftotext`, from poppler-utils, which reads parts-catalog
+PDFs for `import_catalog`. The app itself runs without it; `deploy.sh`
+warns if it's missing.
+
+```bash
+sudo apt-get install poppler-utils
+```
+
 Then:
 
 ```bash
