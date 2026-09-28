@@ -38,12 +38,18 @@
            (inherited down to each <td>), which sits on top of and hides a plain
            background-color set directly on the <tr> — so set the variable instead. */
         .catalog-part-highlight { --bs-table-bg: #fff3cd; }
+        /* Keep each nav label on one line; with ten sections the bar collapses
+           to the menu button below the xl breakpoint instead of wrapping. */
+        .navbar-nav .nav-link { white-space: nowrap; }
+        @media (min-width: 1200px) and (max-width: 1399.98px) {
+            .navbar-expand-xl .navbar-nav .nav-link { padding-left: .35rem; padding-right: .35rem; }
+        }
         /* ✓ / ✗ / ? after a catalog part: does it fit the job's equipment? */
         .fit-badge { font-weight: 600; margin-left: .25rem; cursor: help; }
     </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 no-print">
+<nav class="navbar navbar-expand-xl navbar-dark bg-dark mb-4 no-print">
     <div class="container">
         <a class="navbar-brand" href="{% url 'inventory:home' %}">⚓ ShipShape</a>
         {% if user.is_authenticated %}
@@ -56,7 +62,8 @@
             {% nav_is_active 'location' as nav_locations %}
             {% nav_is_active 'category' as nav_categories %}
             {% nav_is_active 'repair' as nav_repairs %}
-            {% nav_is_active 'job' 'requirement' 'option' 'rfq' as nav_jobs %}
+            {% nav_is_active 'job' 'requirement' 'option' as nav_jobs %}
+            {% nav_is_active 'rfq' as nav_rfqs %}
             {% nav_is_active 'equipment' as nav_equipment %}
             {% nav_is_active 'vendor' as nav_vendors %}
             {% nav_is_active 'catalog' as nav_catalog %}
@@ -67,6 +74,7 @@
                 <li class="nav-item"><a class="nav-link{% if nav_categories %} active{% endif %}" {% if nav_categories %}aria-current="page"{% endif %} href="{% url 'inventory:category_list' %}">Categories</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_repairs %} active{% endif %}" {% if nav_repairs %}aria-current="page"{% endif %} href="{% url 'inventory:repair_list' %}">Repair log</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_jobs %} active{% endif %}" {% if nav_jobs %}aria-current="page"{% endif %} href="{% url 'inventory:job_list' %}">Jobs</a></li>
+                <li class="nav-item"><a class="nav-link{% if nav_rfqs %} active{% endif %}" {% if nav_rfqs %}aria-current="page"{% endif %} href="{% url 'inventory:rfq_list' %}">RFQs</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_equipment %} active{% endif %}" {% if nav_equipment %}aria-current="page"{% endif %} href="{% url 'inventory:equipment_list' %}">Equipment</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_vendors %} active{% endif %}" {% if nav_vendors %}aria-current="page"{% endif %} href="{% url 'inventory:vendor_list' %}">Vendors</a></li>
                 <li class="nav-item"><a class="nav-link{% if nav_catalog %} active{% endif %}" {% if nav_catalog %}aria-current="page"{% endif %} href="{% url 'inventory:catalog_source_list' %}">Parts catalogue</a></li>
