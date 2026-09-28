@@ -98,6 +98,16 @@ uv run manage.py collectstatic --noinput
 uv run gunicorn djangoshipshape.wsgi -b <tailscale-ip>:8001 -w 2
 ```
 
+To ship later changes, push to `main` and run `deploy.sh` on the server:
+
+```bash
+ssh ionos 'bash ~/shipshape/deploy.sh'
+```
+
+It pulls, syncs dependencies, snapshots the database if there are
+migrations to apply, migrates, collects static files and restarts
+`shipshape.service` — nothing else on the server is touched.
+
 Uploaded photos are resized to fit 1600 px on their longest side and
 rotated upright (phones often store portrait shots sideways with a
 rotation flag). Re-encoding also drops embedded EXIF data such as GPS
