@@ -1,10 +1,11 @@
+import csv
 from decimal import Decimal
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, ProtectedError, Q, Sum
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -1277,6 +1278,50 @@ class RfqListView(ListView):
         return Rfq.objects.select_related('job', 'vendor')
 
 
+def rfq_rows(rfq):
+    """An RFQ's parts as the vendor sees them — part number, description,
+    quantity, unit — in the job table's default order (Fig, No., Part
+    number), so they read figure by figure."""
+    requirements = sort_requirements(
+        (line.requirement for line in rfq.lines.select_related(
+            'requirement__unit', 'requirement__catalog_part__section',
+        )),
+        REQUIREMENT_DEFAULT_SORT,
+    )
+    return [
+        {
+            'part_number': r.part_number,
+            'description': r.name,
+            'quantity': format_quantity(r.quantity_needed),
+            'unit': str(r.unit) if r.unit else '',
+        }
+        for r in requirements
+    ]
+
+
+def rfq_mailto(rfq, rows):
+    """A mailto: link with the vendor's email (if known), a subject, and the
+    parts as plain lines, part number first. mailto bodies can't carry HTML,
+    and space-padded columns fall apart in a proportional font, so the page's
+    'Copy table' button is how a real table gets into the email. A few blank
+    lines are left at the top for a covering paragraph."""
+    lines = [
+        ' — '.join(filter(None, [
+            row['part_number'] or '(no part number)',
+            f"{row['quantity']} {row['unit']}".strip(),
+            row['description'],
+        ]))
+        for row in rows
+    ]
+    body = '\n\n\n\n' + '\n'.join(lines) + '\n'
+    to = rfq.vendor.email if rfq.vendor and rfq.vendor.email else ''
+    return (
+        f'mailto:{to}'
+        f'?subject={quote(f"RFQ — {rfq.job.title}")}'
+        f'&body={quote(body.replace(chr(10), chr(13) + chr(10)))}'
+    )
+
+
 class RfqDetailView(DetailView):
     model = Rfq
     template_name = 'inventory/rfq_detail.html'
@@ -1287,8 +1332,25 @@ class RfqDetailView(DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['lines'] = self.object.lines.select_related('requirement', 'requirement__unit', 'requirement__category')
+        rows = rfq_rows(self.object)
+        context['rows'] = rows
+        context['mailto_url'] = rfq_mailto(self.object, rows)
         return context
+
+
+def rfq_csv(request, pk):
+    """The RFQ's parts as a CSV to attach — opens in Excel, and most quoting
+    systems can import it."""
+    rfq = get_object_or_404(Rfq.objects.select_related('job', 'vendor'), pk=pk)
+    filename = f'RFQ - {rfq.job.title} - {rfq.vendor or "no vendor"}.csv'.replace('/', '-')
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    response.write('\ufeff')  # BOM, so Excel reads the file as UTF-8
+    writer = csv.writer(response)
+    writer.writerow(['Part No.', 'Description', 'Qty', 'Unit'])
+    for row in rfq_rows(rfq):
+        writer.writerow([row['part_number'], row['description'], row['quantity'], row['unit']])
+    return response
 
 
 def rfq_mark_sent(request, pk):

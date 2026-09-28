@@ -1,6 +1,5 @@
 import os
 from decimal import Decimal
-from urllib.parse import quote
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MinValueValidator
@@ -841,35 +840,6 @@ class Rfq(models.Model):
 
     def __str__(self):
         return f'RFQ for {self.job.title} — {self.vendor or "no vendor"} ({self.get_status_display()})'
-
-    @property
-    def mailto_url(self):
-        """A mailto: link with the vendor's email (if known), a subject, and a
-        plain-text parts table in the body — mailto bodies can't carry real
-        HTML, so this is padded into aligned columns instead. A few blank
-        lines are left at the top for you to write a covering paragraph
-        before the table."""
-        lines = list(self.lines.select_related('requirement', 'requirement__unit'))
-        name_width = max([len(line.requirement.name) for line in lines] + [len('Part')])
-        qty_strings = [
-            format_quantity(line.requirement.quantity_needed) + (f' {line.requirement.unit}' if line.requirement.unit else '')
-            for line in lines
-        ]
-        qty_width = max([len(q) for q in qty_strings] + [len('Qty')])
-
-        header = f'{"Part":<{name_width}}  {"Qty":<{qty_width}}  Part No.'
-        table_rows = [header, '-' * len(header)]
-        for line, qty in zip(lines, qty_strings):
-            table_rows.append(f'{line.requirement.name:<{name_width}}  {qty:<{qty_width}}  {line.requirement.part_number}')
-
-        body = '\n\n\n\n' + '\n'.join(table_rows) + '\n'
-        to = self.vendor.email if self.vendor and self.vendor.email else ''
-        subject = f'RFQ — {self.job.title}'
-        return (
-            f'mailto:{to}'
-            f'?subject={quote(subject)}'
-            f'&body={quote(body.replace(chr(10), chr(13) + chr(10)))}'
-        )
 
 
 class RfqLine(models.Model):

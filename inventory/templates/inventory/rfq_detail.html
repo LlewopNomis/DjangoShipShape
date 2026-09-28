@@ -9,7 +9,7 @@
         </ol>
     </nav>
 
-    <div class="d-flex justify-content-between align-items-start mb-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
         <div>
             <h3 class="mb-0">RFQ — {{ rfq.job.title }}</h3>
             <p class="text-muted mb-0">
@@ -19,8 +19,13 @@
                 · created {{ rfq.created_at|date:"Y-m-d" }}
             </p>
         </div>
-        <div class="btn-group no-print">
-            <a href="{{ rfq.mailto_url }}" class="btn btn-sm btn-primary">Open email draft</a>
+        <div class="d-flex flex-wrap justify-content-end gap-2 text-nowrap no-print">
+        <div class="btn-group">
+            <a href="{{ mailto_url }}" class="btn btn-sm btn-primary">Open email draft</a>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="copy-rfq-table">Copy table</button>
+            <a href="{% url 'inventory:rfq_csv' rfq.pk %}" class="btn btn-sm btn-outline-primary">Download CSV</a>
+        </div>
+        <div class="btn-group">
             <a href="{% url 'inventory:job_detail' rfq.job_id %}" class="btn btn-sm btn-outline-secondary">Back to job</a>
             {% if rfq.status == 'draft' %}
                 <form method="post" action="{% url 'inventory:rfq_mark_sent' rfq.pk %}" class="d-inline">
@@ -39,25 +44,65 @@
             {% endif %}
             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">Print</button>
         </div>
+        </div>
     </div>
 
     {% if not rfq.vendor.email %}
         <p class="text-muted small no-print">No vendor email on file — the draft opens with the To: field blank.</p>
     {% endif %}
 
-    <table class="table table-sm align-middle">
+    <p class="text-muted small no-print mb-2">
+        Open the email draft, then paste the copied table in place of the plain list (the vendor can
+        select the Part No. column straight from it), or attach the CSV for their quoting system.
+        <span id="copy-rfq-status" class="text-success fw-semibold" aria-live="polite"></span>
+    </p>
+
+    <table class="table table-sm align-middle" id="rfq-table">
         <thead>
-            <tr><th>Part</th><th>Part number</th><th>Qty</th><th>Category</th></tr>
+            <tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Unit</th></tr>
         </thead>
         <tbody>
-        {% for line in lines %}
+        {% for row in rows %}
             <tr>
-                <td>{{ line.requirement.name }}</td>
-                <td>{{ line.requirement.part_number }}</td>
-                <td>{{ line.requirement.quantity_needed|qty }}{% if line.requirement.unit %} {{ line.requirement.unit }}{% endif %}</td>
-                <td>{{ line.requirement.category|default:"—" }}</td>
+                <td class="text-nowrap">{{ row.part_number }}</td>
+                <td>{{ row.description }}</td>
+                <td>{{ row.quantity }}</td>
+                <td>{{ row.unit }}</td>
             </tr>
         {% endfor %}
         </tbody>
     </table>
+    <script>
+        // Copies the table as rich HTML (plus tab-separated text), so it pastes
+        // into an email as a real table. Uses a selection + execCommand rather
+        // than navigator.clipboard, which browsers only allow over HTTPS — and
+        // the server is plain HTTP over Tailscale. Inline styles, because the
+        // email won't have this page's CSS.
+        document.getElementById('copy-rfq-table').addEventListener('click', function () {
+            var copy = document.getElementById('rfq-table').cloneNode(true);
+            copy.removeAttribute('id');
+            copy.removeAttribute('class');
+            copy.setAttribute('style', 'border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px;');
+            copy.querySelectorAll('th, td').forEach(function (cell) {
+                cell.removeAttribute('class');
+                cell.setAttribute('style', 'border: 1px solid #999; padding: 4px 8px; text-align: left;'
+                    + (cell.tagName === 'TH' ? ' background: #eee;' : ''));
+            });
+            var holder = document.createElement('div');
+            holder.style.position = 'fixed';
+            holder.style.left = '-10000px';
+            holder.appendChild(copy);
+            document.body.appendChild(holder);
+            var range = document.createRange();
+            range.selectNode(copy);
+            var selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            var ok = document.execCommand('copy');
+            selection.removeAllRanges();
+            holder.remove();
+            document.getElementById('copy-rfq-status').textContent = ok
+                ? 'Copied — paste it into the email.' : "Couldn't copy — select the table and copy it by hand.";
+        });
+    </script>
 {% endblock %}

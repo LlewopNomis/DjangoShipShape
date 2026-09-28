@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from urllib.parse import unquote
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -20,7 +21,7 @@ from .fitment import FITS, OTHER_BUILD, UNKNOWN, fitment_for, identifier_key
 from .forms import PartRequirementForm
 from .models import (
     CatalogPart, CatalogPartFitment, CatalogSection, CatalogSource, CatalogVariant, Equipment, InventoryItem, ItemPhoto, Job, Location, LocationPhoto,
-    PartRequirement, Repair, RepairPhoto, Spare, SparePhoto,
+    PartRequirement, Repair, RepairPhoto, Rfq, RfqLine, Spare, SparePhoto, Unit, Vendor,
 )
 from .management.commands.import_catalog import Command as ImportCatalogCommand
 from .templatetags.inventory_extras import catalog_part_field
@@ -571,3 +572,41 @@ class FitMarksTests(Fig28ImportMixin, TestCase):
         self.assertContains(response, '<abbr title="Not interchangeable either way')
         response = self.client.get(reverse('inventory:catalog_section_detail', args=[fig.pk]), {'equipment': 'none'})
         self.assertNotContains(response, 'class="fit-badge')
+
+
+class RfqOutputTests(Fig28ImportMixin, TestCase):
+    """What the vendor gets: a table in the job's Fig / No. / Part number
+    order, a CSV to attach, and a plain-text draft that reads without
+    aligned columns."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(get_user_model().objects.create_user('simon', password='pw'))
+        self.run_import()
+        job = Job.objects.create(title='Heat exchanger')
+        ea = Unit.objects.get_or_create(name='ea')[0]
+        self.rfq = Rfq.objects.create(job=job, vendor=Vendor.objects.create(name='Minards Diesel', email='parts@example.com'))
+        for item_no, name, qty in (('22', 'O-RING, 1AG80.0', 2), ('13', 'CORE ASSY', 1)):
+            part = CatalogPart.objects.get(item_no=item_no)
+            requirement = PartRequirement.objects.create(
+                job=job, name=name, part_number=part.part_number, quantity_needed=qty, unit=ea, catalog_part=part,
+            )
+            RfqLine.objects.create(rfq=self.rfq, requirement=requirement)
+
+    def test_csv_lists_parts_in_fig_order(self):
+        response = self.client.get(reverse('inventory:rfq_csv', args=[self.rfq.pk]))
+        self.assertIn('attachment;', response['Content-Disposition'])
+        lines = response.content.decode('utf-8-sig').splitlines()
+        self.assertEqual(lines, [
+            'Part No.,Description,Qty,Unit',
+            '129670-44400,CORE ASSY,1,ea',
+            '24321-000800,"O-RING, 1AG80.0",2,ea',
+        ])
+
+    def test_page_table_and_email_draft(self):
+        response = self.client.get(reverse('inventory:rfq_detail', args=[self.rfq.pk]))
+        self.assertContains(response, 'Copy table')
+        self.assertContains(response, '<td class="text-nowrap">129670-44400</td>')
+        mailto = unquote(response.context['mailto_url'])
+        self.assertTrue(mailto.startswith('mailto:parts@example.com?subject=RFQ — Heat exchanger'))
+        self.assertIn('129670-44400 — 1 ea — CORE ASSY\r\n24321-000800 — 2 ea — O-RING, 1AG80.0', mailto)
