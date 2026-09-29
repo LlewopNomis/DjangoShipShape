@@ -89,6 +89,7 @@ urlpatterns = [
     path('rfqs/', views.RfqListView.as_view(), name='rfq_list'),
     path('rfqs/<int:pk>/', views.RfqDetailView.as_view(), name='rfq_detail'),
     path('rfqs/<int:pk>/csv/', views.rfq_csv, name='rfq_csv'),
+    path('rfqs/<int:pk>/lines/', views.rfq_update_lines, name='rfq_update_lines'),
     path('rfqs/<int:pk>/sent/', views.rfq_mark_sent, name='rfq_mark_sent'),
     path('rfqs/<int:pk>/draft/', views.rfq_mark_draft, name='rfq_mark_draft'),
     path('rfqs/<int:pk>/delete/', views.rfq_delete, name='rfq_delete'),

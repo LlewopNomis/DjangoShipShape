@@ -610,3 +610,24 @@ class RfqOutputTests(Fig28ImportMixin, TestCase):
         mailto = unquote(response.context['mailto_url'])
         self.assertTrue(mailto.startswith('mailto:parts@example.com?subject=RFQ — Heat exchanger'))
         self.assertIn('129670-44400 — 1 ea — CORE ASSY\r\n24321-000800 — 2 ea — O-RING, 1AG80.0', mailto)
+
+    def test_availability_and_notes_are_saved_but_not_sent(self):
+        core, oring = sorted(self.rfq.lines.all(), key=lambda line: line.requirement.name)
+        response = self.client.post(reverse('inventory:rfq_update_lines', args=[self.rfq.pk]), {
+            f'available_{oring.pk}': 'on',
+            f'note_{core.pk}': '  Superseded by 129670-44401 ',
+            f'note_{oring.pk}': '',
+        })
+        self.assertRedirects(response, reverse('inventory:rfq_detail', args=[self.rfq.pk]))
+        core.refresh_from_db()
+        oring.refresh_from_db()
+        self.assertFalse(core.available)
+        self.assertEqual(core.note, 'Superseded by 129670-44401')
+        self.assertTrue(oring.available)
+
+        response = self.client.get(reverse('inventory:rfq_detail', args=[self.rfq.pk]))
+        self.assertContains(response, 'value="Superseded by 129670-44401"')
+        self.assertContains(response, '<tr class="table-warning">', count=1)
+        self.assertNotIn('Superseded', unquote(response.context['mailto_url']))
+        csv_response = self.client.get(reverse('inventory:rfq_csv', args=[self.rfq.pk]))
+        self.assertNotIn('Superseded', csv_response.content.decode('utf-8-sig'))

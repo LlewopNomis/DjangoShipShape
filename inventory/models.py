@@ -843,10 +843,15 @@ class Rfq(models.Model):
 
 
 class RfqLine(models.Model):
-    """One part requirement included in an Rfq's batch."""
+    """One part requirement included in an Rfq's batch. `available` and
+    `note` record the vendor's reply — a part they can't supply, or an
+    alternative part number they've offered — for following up; they're
+    never part of what's sent to the vendor."""
 
     rfq = models.ForeignKey(Rfq, on_delete=models.CASCADE, related_name='lines')
     requirement = models.ForeignKey(PartRequirement, on_delete=models.CASCADE, related_name='rfq_lines')
+    available = models.BooleanField(default=True)
+    note = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ['id']

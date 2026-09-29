@@ -1281,15 +1281,15 @@ class RfqListView(ListView):
 def rfq_rows(rfq):
     """An RFQ's parts as the vendor sees them — part number, description,
     quantity, unit — in the job table's default order (Fig, No., Part
-    number), so they read figure by figure."""
-    requirements = sort_requirements(
-        (line.requirement for line in rfq.lines.select_related(
-            'requirement__unit', 'requirement__catalog_part__section',
-        )),
-        REQUIREMENT_DEFAULT_SORT,
-    )
+    number), so they read figure by figure. Each row also carries its
+    RfqLine, for the page's own availability / note columns."""
+    lines = rfq.lines.select_related('requirement__unit', 'requirement__catalog_part__section')
+    for line in lines:
+        line.requirement.rfq_line = line
+    requirements = sort_requirements((line.requirement for line in lines), REQUIREMENT_DEFAULT_SORT)
     return [
         {
+            'line': r.rfq_line,
             'part_number': r.part_number,
             'description': r.name,
             'quantity': format_quantity(r.quantity_needed),
@@ -1351,6 +1351,20 @@ def rfq_csv(request, pk):
     for row in rfq_rows(rfq):
         writer.writerow([row['part_number'], row['description'], row['quantity'], row['unit']])
     return response
+
+
+def rfq_update_lines(request, pk):
+    """Saves the vendor's reply against each line — whether it's available,
+    and a note (alternative part number, lead time, …) to follow up on."""
+    rfq = get_object_or_404(Rfq, pk=pk)
+    if request.method == 'POST':
+        lines = list(rfq.lines.all())
+        for line in lines:
+            line.available = f'available_{line.pk}' in request.POST
+            line.note = request.POST.get(f'note_{line.pk}', line.note).strip()[:255]
+        RfqLine.objects.bulk_update(lines, ['available', 'note'])
+        messages.success(request, 'Availability and notes saved.')
+    return redirect('inventory:rfq_detail', pk=rfq.pk)
 
 
 def rfq_mark_sent(request, pk):

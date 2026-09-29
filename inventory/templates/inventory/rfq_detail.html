@@ -57,21 +57,40 @@
         <span id="copy-rfq-status" class="text-success fw-semibold" aria-live="polite"></span>
     </p>
 
+    <form method="post" action="{% url 'inventory:rfq_update_lines' rfq.pk %}">
+    {% csrf_token %}
     <table class="table table-sm align-middle" id="rfq-table">
         <thead>
-            <tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Unit</th></tr>
+            <tr>
+                <th>Part No.</th><th>Description</th><th>Qty</th><th>Unit</th>
+                <th class="rfq-internal text-center" title="Untick parts the vendor can't supply">Avail.</th>
+                <th class="rfq-internal">Note</th>
+            </tr>
         </thead>
         <tbody>
         {% for row in rows %}
-            <tr>
+            <tr{% if not row.line.available %} class="table-warning"{% endif %}>
                 <td class="text-nowrap">{{ row.part_number }}</td>
                 <td>{{ row.description }}</td>
                 <td>{{ row.quantity }}</td>
                 <td>{{ row.unit }}</td>
+                <td class="rfq-internal text-center">
+                    <input type="checkbox" class="form-check-input" name="available_{{ row.line.pk }}"
+                           aria-label="{{ row.part_number }} available"{% if row.line.available %} checked{% endif %}>
+                </td>
+                <td class="rfq-internal">
+                    <input type="text" class="form-control form-control-sm" name="note_{{ row.line.pk }}"
+                           value="{{ row.line.note }}" maxlength="255" placeholder="e.g. alt. part no."
+                           aria-label="{{ row.part_number }} note">
+                </td>
             </tr>
         {% endfor %}
         </tbody>
     </table>
+    <div class="text-end no-print">
+        <button type="submit" class="btn btn-sm btn-primary">Save availability &amp; notes</button>
+    </div>
+    </form>
     <script>
         // Copies the table as rich HTML (plus tab-separated text), so it pastes
         // into an email as a real table. Uses a selection + execCommand rather
@@ -82,6 +101,8 @@
             var copy = document.getElementById('rfq-table').cloneNode(true);
             copy.removeAttribute('id');
             copy.removeAttribute('class');
+            // Availability and notes are for your own follow-up, not the vendor.
+            copy.querySelectorAll('.rfq-internal').forEach(function (cell) { cell.remove(); });
             copy.setAttribute('style', 'border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px;');
             copy.querySelectorAll('th, td').forEach(function (cell) {
                 cell.removeAttribute('class');
